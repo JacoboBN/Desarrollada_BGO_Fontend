@@ -1,0 +1,39 @@
+name: Build & Release (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-win:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate tag matches package version
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          if ($pkg -ne $tag) {
+            Write-Error "Tag v$tag no coincide con package.json version $pkg"
+            exit 1
+          }
+
+      - name: Build + Publish release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run build:win -- --publish always

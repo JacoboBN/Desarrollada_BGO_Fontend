@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DriveShare - Usuario final</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #f0f0f0;
+      min-height: 100vh;
+      color: #1f1f1f;
+    }
+
+    .section {
+      display: none;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    .login-section {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    .btn {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .btn-secondary {
+      background: #6c757d;
+    }
+
+    .btn-danger {
+      background: #c0392b;
+    }
+
+    .btn.small {
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: flex;
+      background: #f5f5f5;
+    }
+
+    .sidebar {
+      width: 20%;
+      min-width: 230px;
+      max-width: 280px;
+      background: #d4d4d4;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: #bcbcbc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .profile-info {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: #333;
+    }
+
+    .profile-info .label {
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #444;
+    }
+
+    .profile-info .value {
+      font-size: 12px;
+      color: #222;
+      word-break: break-all;
+    }
+
+    .profile-info .placeholder {
+      color: #666;
+    }
+
+    .menu {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .menu-item {
+      text-align: left;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: none;
+      background: #e0e0e0;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #222;
+    }
+
+    .menu-item:hover {
+      background: #c9c9c9;
+    }
+
+    .menu-item.drag-over {
+      background: #b9dafd;
+      outline: 2px dashed #007bff;
+      outline-offset: 2px;
+    }
+
+    .compare-mode-panel {
+      background: #efefef;
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .upload-order-panel {
+      background: #efefef;
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .compare-mode-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #333;
+      text-transform: uppercase;
+    }
+
+    .compare-mode-toggle {
+      display: flex;
+      gap: 6px;
+    }
+
+    .compare-mode-btn {
+      flex: 1;
+      border: 1px solid #c8c8c8;
+      background: #fff;
+      color: #333;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      line-height: 1.2;
+    }
+
+    .compare-mode-btn.active {
+      background: #007bff;
+      border-color: #007bff;
+      color: #fff;
+    }
+
+    .panel {
+      background: #efefef;
+      padding: 10px;
+      border-radius: 8px;
+    }
+
+    .share-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .share-row input {
+      flex: 1;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #c5c5c5;
+      font-size: 12px;
+    }
+
+    .shared-list {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .shared-item {
+      background: #f7f7f7;
+      border: 1px solid #d2d2d2;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 12px;
+      color: #333;
+      word-break: break-all;
+    }
+
+    .folder-tree {
+      max-height: 320px;
+      overflow: auto;
+      padding: 6px 0;
+    }
+
+    .folder-tree div {
+      padding: 6px 8px;
+      cursor: pointer;
+      border-radius: 6px;
+    }
+
+    .folder-tree div:hover {
+      background: #dcdcdc;
+    }
+
+    .main {
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .topbar-extra {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .info-dot {
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      border-radius: 50%;
+      border: 1px solid #97a5b4;
+      background: #f5f8fb;
+      color: #3a4a5c;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: help;
+      user-select: none;
+      position: relative;
+    }
+
+    .info-dot[data-tooltip]:hover::after,
+    .info-dot[data-tooltip]:focus-visible::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      width: min(360px, 75vw);
+      background: #1f2937;
+      color: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 500;
+      z-index: 2000;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+      text-align: left;
+      white-space: normal;
+    }
+
+    .info-dot[data-tooltip]:hover::before,
+    .info-dot[data-tooltip]:focus-visible::before {
+      content: '';
+      position: absolute;
+      top: calc(100% + 2px);
+      right: 6px;
+      border-width: 6px;
+      border-style: solid;
+      border-color: transparent transparent #1f2937 transparent;
+      z-index: 2001;
+    }
+
+    .search-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .search-input {
+      min-width: 240px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #c7c7c7;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .search-results {
+      background: #ffffff;
+      border: 1px solid #d2d2d2;
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .search-results.active {
+      display: flex;
+    }
+
+    .search-result-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .search-result-item:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .search-result-title {
+      font-weight: 600;
+      color: #222;
+      font-size: 14px;
+      word-break: break-word;
+    }
+
+    .search-result-path {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .search-result-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .breadcrumbs {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(160px, 1fr));
+      gap: 16px;
+    }
+
+    .tile {
+      background: #ffffff;
+      border: 1px solid #d1d1d1;
+      border-radius: 12px;
+      padding: 24px;
+      font-size: 16px;
+      font-weight: 600;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .tile:hover {
+      background: #f0f0f0;
+    }
+
+    .tile.disabled {
+      cursor: not-allowed;
+      background: #f5f5f5;
+      color: #999;
+    }
+
+    .files-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .file-tile {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-radius: 8px;
+    }
+
+    .file-tile .name {
+      font-size: 14px;
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .file-tile .meta {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 8px;
+      text-align: center;
+      display: none;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      display: block;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      display: block;
+    }
+
+    .status.loading {
+      background: #d1ecf1;
+      color: #0c5460;
+      display: block;
+    }
+
+    .queue-panel {
+      background: #ffffff;
+      border: 1px solid #d1d1d1;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .queue-panel h3 {
+      margin-bottom: 12px;
+      font-size: 16px;
+      color: #333;
+    }
+
+    .queue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .queue-header h3 {
+      margin: 0;
+    }
+
+    .queue-estimate {
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #eef6ff;
+      border: 1px solid #cfe2ff;
+      color: #164a83;
+      font-size: 13px;
+      font-weight: 600;
+      display: none;
+    }
+
+    .queue-estimate.active {
+      display: block;
+    }
+
+    .queue-bulk-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .queue-bulk-controls.hidden {
+      display: none;
+    }
+
+    .queue-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .queue-item-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .queue-select-checkbox {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    .app-version {
+      margin-top: 4px;
+      padding-top: 2px;
+      font-size: 12px;
+      color: #4f4f4f;
+      font-weight: 600;
+    }
+
+    .updater-panel {
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #eef6ff;
+      border: 1px solid #cfe2ff;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .updater-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a3f69;
+      text-transform: uppercase;
+    }
+
+    .updater-message {
+      font-size: 12px;
+      color: #1f1f1f;
+      line-height: 1.35;
+    }
+
+    .updater-progress {
+      width: 100%;
+      height: 8px;
+      appearance: none;
+    }
+
+    .updater-progress.hidden {
+      display: none;
+    }
+
+    .updater-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .queue-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .queue-item {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .queue-item .file-name {
+      font-weight: 600;
+      color: #222;
+      font-size: 14px;
+    }
+
+    .queue-item .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 12px;
+      color: #444;
+    }
+
+    .queue-step {
+      padding: 4px 8px;
+      border-radius: 12px;
+      background: #e0e0e0;
+    }
+
+    .queue-step.active {
+      background: #d1ecf1;
+      color: #0c5460;
+      font-weight: 600;
+    }
+
+    .queue-step.done {
+      background: #d4edda;
+      color: #155724;
+      font-weight: 600;
+    }
+
+    .queue-step.error {
+      background: #f8d7da;
+      color: #721c24;
+      font-weight: 600;
+    }
+
+    .startup-status {
+      background: #fff8e1;
+      border: 1px solid #f0d88c;
+      color: #7a5b00;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .startup-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 15, 0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .startup-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .startup-overlay-card {
+      background: #ffffff;
+      padding: 32px 40px;
+      border-radius: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      min-width: 280px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+      text-align: center;
+    }
+
+    .startup-spinner {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 6px solid #e0e0e0;
+      border-top-color: #007bff;
+      animation: spin 1s linear infinite;
+    }
+
+    .startup-overlay-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1f1f1f;
+    }
+
+    .startup-overlay-message {
+      font-size: 14px;
+      color: #555;
+    }
+
+    .upload-drop-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 15, 15, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .upload-drop-modal.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .upload-drop-card {
+      background: #ffffff;
+      border-radius: 16px;
+      padding: 20px;
+      width: min(520px, calc(100vw - 32px));
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .upload-drop-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-drop-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1f1f1f;
+    }
+
+    .upload-drop-close {
+      border: none;
+      background: transparent;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      color: #555;
+    }
+
+    .upload-drop-zones {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .upload-drop-zone {
+      border: 2px dashed #9ab7d8;
+      border-radius: 14px;
+      min-height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+      color: #35506b;
+      font-size: 20px;
+      font-weight: 600;
+      background: #f7fbff;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    @media (max-width: 680px) {
+      .upload-drop-zones {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .upload-drop-zone.drag-over {
+      border-color: #007bff;
+      background: #eaf4ff;
+      color: #0b4a88;
+    }
+
+    .upload-drop-hint {
+      font-size: 13px;
+      color: #666;
+      text-align: center;
+    }
+
+    .backend-alert {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      width: min(420px, calc(100vw - 24px));
+      background: #fff;
+      border: 1px solid #f2c4c4;
+      border-left: 6px solid #c62828;
+      border-radius: 10px;
+      box-shadow: 0 14px 35px rgba(0, 0, 0, 0.22);
+      z-index: 11000;
+      display: none;
+    }
+
+    .backend-alert.active {
+      display: block;
+    }
+
+    .backend-alert-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px 6px;
+    }
+
+    .backend-alert-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #7a1212;
+    }
+
+    .backend-alert-close {
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      color: #666;
+    }
+
+    .backend-alert-body {
+      padding: 0 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+      color: #2d2d2d;
+    }
+
+    .backend-alert-help {
+      background: #fdf4f4;
+      border: 1px solid #efcaca;
+      border-radius: 8px;
+      padding: 8px;
+      color: #5e2020;
+      white-space: pre-line;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+    <div id="status" class="status"></div>
+
+    <div class="startup-overlay" id="startup-overlay">
+      <div class="startup-overlay-card">
+        <div class="startup-spinner"></div>
+        <div class="startup-overlay-title">Revisando carpetas...</div>
+        <div class="startup-overlay-message" id="startup-overlay-message">
+          Preparando la sincronización con Drive.
+        </div>
+      </div>
+    </div>
+
+    <div class="upload-drop-modal" id="upload-drop-modal">
+      <div class="upload-drop-card">
+        <div class="upload-drop-header">
+          <div class="upload-drop-title" id="upload-drop-title">Subir archivo</div>
+          <button class="upload-drop-close" id="upload-drop-close" aria-label="Cerrar">×</button>
+        </div>
+        <div class="upload-drop-zones">
+          <div class="upload-drop-zone" id="upload-drop-zone">SUBIR CARPETA COMPLETA</div>
+          <div class="upload-drop-zone" id="upload-drop-zone-files">SUBIR ARCHIVO/S</div>
+        </div>
+        <div class="upload-drop-hint">Puedes arrastrar archivos o hacer click para seleccionarlos.</div>
+      </div>
+    </div>
+
+    <div class="backend-alert" id="backend-alert">
+      <div class="backend-alert-header">
+        <div class="backend-alert-title" id="backend-alert-title">Aviso del backend</div>
+        <button class="backend-alert-close" id="backend-alert-close" aria-label="Cerrar aviso">×</button>
+      </div>
+      <div class="backend-alert-body">
+        <div id="backend-alert-message">Se ha detectado un error de conexión.</div>
+        <div class="backend-alert-help" id="backend-alert-help"></div>
+      </div>
+    </div>
+
+    <!-- Login Section -->
+    <div class="section active" id="login-section">
+      <div class="login-section">
+        <h1>BGO</h1>
+        <p style="color: #666;">Inicia sesión con Google para comenzar</p>
+        <button class="btn" id="login-btn">Iniciar sesión con Google</button>
+      </div>
+    </div>
+
+    <!-- Upload Section with folder browser -->
+    <div class="section" id="billing-setup-section">
+      <div class="login-section">
+        <h2>Configuración de Email de facturas</h2>
+        <p id="billing-question-text" style="color:#666; max-width:640px;">
+          ¿Las facturas llegan al mismo email que acabas de iniciar sesión?
+        </p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+          <button class="btn" id="billing-same-btn">Sí, usar este email</button>
+          <button class="btn btn-secondary" id="billing-different-btn" disabled>No, usar otro email</button>
+        </div>
+        <div id="billing-different-actions" style="display:none; margin-top:8px;">
+          <p style="color:#666; margin-bottom:10px;">Inicia sesión con el email que recibirá las facturas.</p>
+          <button class="btn" id="billing-login-btn">Iniciar sesión en email de facturas</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="upload-section">
+      <div class="app">
+        <aside class="sidebar">
+          <div class="profile">
+            <div class="avatar">👤</div>
+            <div class="profile-info">
+              <div class="label">Email de la nube</div>
+              <div class="value" id="user-email"></div>
+              <div class="label">Email de Facturas</div>
+              <div class="value placeholder" id="billing-email">Pendiente</div>
+            </div>
+          </div>
+
+          <nav class="menu">
+            <button class="menu-item" data-action="open-albaranes">Albaranes</button>
+            <button class="menu-item" data-action="open-facturas">Facturas</button>
+            <button class="menu-item" data-action="upload-albaran">Subir Albarán (2)</button>
+            <button class="menu-item" data-action="upload-factura">Subir Factura (1)</button>
+          </nav>
+
+          <button class="btn btn-secondary small" id="logout-btn">Cerrar sesión</button>
+
+          <div class="app-version" id="app-version">Versión --</div>
+
+          <div class="updater-panel" id="updater-panel">
+            <div class="updater-title">Actualizaciones</div>
+            <div class="updater-message" id="updater-message">Comprobación de actualizaciones pendiente.</div>
+            <progress class="updater-progress hidden" id="updater-progress" value="0" max="100"></progress>
+            <div class="updater-actions">
+              <button class="btn btn-secondary small" id="updater-check-btn" type="button">Buscar ahora</button>
+              <button class="btn small" id="updater-install-btn" type="button" disabled>Reiniciar e instalar</button>
+              <!-- <button class="btn btn-secondary small" id="updater-release-btn" type="button">Ver release</button> -->
+            </div>
+          </div>
+
+             <div class="compare-mode-panel">
+              <div class="compare-mode-title">Manual de instrucciones</div>
+              <div style="margin-top:8px;">
+                <a class="btn btn-secondary small" href="https://docs.google.com/document/d/1QhONo79fJ5_ASWtb8KsH9hHCjR71CeJHBx1QgC44bMc/edit?usp=sharing" target="_blank" rel="noopener">
+                  Abrir manual
+                </a>
+              </div>
+            </div>
+
+          <!-- <div class="compare-mode-panel">
+            <div class="compare-mode-title">Modo de comparación</div>
+            <div class="compare-mode-toggle" role="group" aria-label="Modo de comparación">
+              <button class="compare-mode-btn active" id="compare-mode-totales" type="button">Comparar por totales</button>
+              <button class="compare-mode-btn" id="compare-mode-complejo" type="button">Comparar complejo</button>
+            </div>
+          </div> -->
+
+          <!-- <div class="upload-order-panel">
+            <div class="compare-mode-title">Orden de carga</div>
+            <div class="compare-mode-toggle" role="group" aria-label="Orden de carga">
+              <button class="compare-mode-btn active" id="upload-order-facturas-first" type="button">Primero Facturas</button>
+              <button class="compare-mode-btn" id="upload-order-albaranes-first" type="button">Primero Albaranes</button>
+            </div>
+          </div> -->
+<!-- 
+          <div class="panel">
+            <div class="label" style="font-weight:600; font-size:12px; color:#333;">Suben albaranes</div>
+            <div class="share-row">
+              <input type="email" id="no-procesado-share-email" placeholder="email@empresa.com" />
+              <button class="btn small" id="no-procesado-share-btn">Compartir</button>
+            </div>
+            <div id="no-procesado-shared-list" class="shared-list">
+              <p style="color:#666">No hay usuarios con acceso</p>
+            </div>
+          </div> -->
+        </aside>
+
+        <main class="main">
+          <div class="topbar">
+            <div class="nav">
+              <button id="back-btn" class="btn small">Atrás</button>
+              <div id="breadcrumbs" class="breadcrumbs"></div>
+            </div>
+            <div class="actions search-actions">
+              <input id="search-input" class="search-input" type="text" placeholder="Buscar documentos por nombre..." />
+            </div>
+            <div class="topbar-extra">
+              <!-- <button id="force-compare-btn" class="btn btn-secondary small" type="button" disabled title="Desactivado por configuración">Probar comparación</button> -->
+              <!-- <span
+                class="info-dot"
+                data-tooltip="Inicia de forma manual la comparación de las facturas pendientes con los albaranes disponibles en ese momento. Su función es reactivar comparaciones que no se hayan completado automáticamente. Si la información necesaria está disponible, la comparación se realiza y el proceso continúa; si faltan albaranes, la factura permanece en espera hasta que estén disponibles.                "
+                aria-label="Información sobre Probar comparación"
+                tabindex="0"
+              >i</span> -->
+            </div>
+          </div>
+
+          <div id="search-results" class="search-results"></div>
+
+          <section class="dashboard">
+            <button class="tile disabled" data-action="centros" disabled>Centros</button>
+            <!-- <button class="tile" data-action="bases-datos">Bases de datos</button> -->
+            <button class="tile disabled" data-action="bases-datos" disabled>Bases de datos</button>
+            <!-- <button class="tile" data-action="bases-datos">Bases de datos</button> -->
+
+
+            <button class="tile" data-action="facturas">Facturas</button>
+            <button class="tile" data-action="albaranes">Albaranes</button>
+          </section>
+
+          <section class="content">
+            <div id="folder-summary" class="panel"></div>
+            <div id="files-list" class="files-grid"></div>
+            <!-- <div class="startup-status" id="startup-status">Estado de inicio: esperando...</div> -->
+            <div class="queue-panel" id="upload-queue-panel">
+              <div class="queue-header">
+                <h3>Seguimiento de archivos</h3>
+                <div class="queue-bulk-controls hidden" id="queue-bulk-controls">
+                  <button class="btn btn-secondary small" id="queue-select-all-btn">Seleccionar todo</button>
+                  <button class="btn btn-danger small" id="queue-cancel-selected-btn">Cancelar seleccionados</button>
+                </div>
+              </div>
+              <div class="queue-estimate" id="queue-time-estimate"></div>
+              <div class="queue-list" id="upload-queue-list">
+                <p style="color:#666">No hay archivos en cola.</p>
+              </div>
+            </div>
+          </section>
+
+        </main>
+      </div>
+    </div>
+  
+  <script src="user.js"></script>
+</body>
+</html>
