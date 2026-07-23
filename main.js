@@ -70,7 +70,9 @@ const DEFAULT_RETRY_MAX_DELAY_MS = 15000;
 
 // Polling de jobs asíncronos
 const JOB_POLL_INTERVAL_MS = 2000;   // cada 2 s
-const JOB_POLL_MAX_ATTEMPTS = 150;   // máx ~5 minutos
+// El backend limita globalmente los análisis pesados, por lo que un job puede esperar en cola.
+// Ampliar el polling no retiene otra copia del PDF: aquí solo se conserva el identificador del job.
+const JOB_POLL_MAX_ATTEMPTS = 900;   // máx ~30 minutos
 
 // Cancelación de items de cola desde el renderer
 const pendingCancellations = new Set(); // queueId → pendiente de cancelar
@@ -263,14 +265,23 @@ function normalizeArticleName(value) {
     .trim();
 }
 
+function cleanAlbaranDisplayId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  // Alantr puede anteponer la etiqueta separada "AL" al número real.
+  // Se exige separador para no alterar identificadores genuinos como ALANTR123.
+  return raw.replace(/^AL(?:[\s._\-/:#]+|(?=AB\d))/i, '').trim();
+}
+
 function normalizeAlbaranNumberForMatch(value) {
-  return String(value || '')
+  return cleanAlbaranDisplayId(value)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     // Tolerar prefijos habituales en algunas facturas/albaranes.
     // Ejemplos equivalentes: "AB/X", "AL AB/X", "ALBARAN AB/X", "ALB-AB/X".
-    .replace(/^(?:(?:albaran(?:es)?|alb|al)(?:n[ouº°.]*)?[\s._\-/:#]*)+/i, '')
+    .replace(/^(?:(?:albaran(?:es)?|alb)[\s._\-/:#]+)+/i, '')
     .replace(/[^a-z0-9]/g, '');
 }
 
@@ -397,6 +408,12 @@ function parseFacturaAnalysis(analysisText) {
   if (!albaranNumbers.length) {
     albaranNumbers = [...new Set(articulos.map(item => item.num_albaran).filter(Boolean))];
   }
+
+  albaranNumbers = [...new Set(
+    albaranNumbers
+      .map(cleanAlbaranDisplayId)
+      .filter(Boolean)
+  )];
 
   return {
     articulos,
