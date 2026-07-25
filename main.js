@@ -1401,7 +1401,7 @@ async function analyzeFileWithBackendIA(filePath, mimeType = '', originalName = 
       if (queueId) {
         activeJobsByQueueId.set(queueId, { jobId: directResponse.data.job_id });
       }
-      const jobResult = await pollJobResult(directResponse.data.job_id);
+      const jobResult = await pollJobResult(directResponse.data.job_id, { sessionId });
       mainLog('info', 'analyzeFileWithBackendIA:job-done', {
         jobId: directResponse.data.job_id,
         hasAnalysis: Boolean(jobResult?.analysis)
@@ -1604,6 +1604,7 @@ async function postWithRetry(url, data, options = {}) {
 async function pollJobResult(jobId, options = {}) {
   const intervalMs = options.intervalMs || JOB_POLL_INTERVAL_MS;
   const maxAttempts = options.maxAttempts || JOB_POLL_MAX_ATTEMPTS;
+  const sessionId = options.sessionId || store.get('sessionId');
 
   mainLog('info', 'pollJobResult:start', { jobId, intervalMs, maxAttempts });
 
@@ -1612,7 +1613,8 @@ async function pollJobResult(jobId, options = {}) {
 
     try {
       const response = await axios.get(`${BACKEND_URL}/job/${jobId}`, {
-        timeout: DEFAULT_TIMEOUT_MS
+        timeout: DEFAULT_TIMEOUT_MS,
+        params: { sessionId }
       });
 
       const job = response.data;
