@@ -1011,12 +1011,15 @@ function buildTxtFilesFromAnalysis(analysisText, sourceFileName = null) {
           createdNames.add(fileName.toLowerCase());
 
           const resumenPorAlbaran = {
-            num_albaran: rawNum || 'NaN',
-            fecha: albaran?.fecha || 'NaN',
-            total_sin_iva: albaran?.total_sin_iva ?? 'NaN',
-            porcentaje_iva: albaran?.porcentaje_iva ?? 'NaN',
-            iva: albaran?.iva ?? 'NaN',
-            total: albaran?.total ?? 'NaN',
+            num_albaran: rawNum ?? null,
+            fecha: albaran?.fecha ?? null,
+            total_sin_iva: albaran?.total_sin_iva ?? null,
+            porcentaje_iva: albaran?.porcentaje_iva ?? null,
+            iva: albaran?.iva ?? null,
+            total: albaran?.total ?? null,
+            total_sumado: albaran?.total_sumado ?? null,
+            total_calculado_por_suma: albaran?.total_calculado_por_suma === 'Sí' ? 'Sí' : 'No',
+            total_fallback_warning: albaran?.total_fallback_warning ?? null,
             error: 'No',
             source_file: sourceFileName || null
           };
