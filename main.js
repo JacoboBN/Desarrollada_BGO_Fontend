@@ -423,18 +423,25 @@ function parseFacturaAnalysis(analysisText) {
 }
 
 function buildFacturaTotalsByAlbaran(parsedFactura = null) {
+  // ANTES: se sumaban los "importe" de parsedFactura.articulos agrupados por
+  // num_albaran (el backend mandaba líneas). Ahora el backend ya no manda
+  // líneas (JSON reducido a solo totales), así que el total por cada albarán
+  // dentro de la factura viene directamente en resumen.albaranes, calculado
+  // en servidor (leído o, si hacía falta, derivado por IVA/subtotal). Es más
+  // fiable que sumar líneas, porque no arrastra errores de OCR línea a línea.
   const totals = new Map();
-  const articulos = Array.isArray(parsedFactura?.articulos) ? parsedFactura.articulos : [];
+  const albaranes = Array.isArray(parsedFactura?.resumen?.albaranes) ? parsedFactura.resumen.albaranes : [];
 
-  articulos.forEach((item) => {
-    const rawNum = item?.num_albaran;
-    const normalizedNum = normalizeAlbaranNumberForMatch(rawNum);
+  albaranes.forEach((item) => {
+    const normalizedNum = normalizeAlbaranNumberForMatch(item?.num_albaran);
     if (!normalizedNum) return;
 
-    const importe = parseComparableNumber(item?.importe);
-    if (!Number.isFinite(importe)) return;
-
-    totals.set(normalizedNum, (totals.get(normalizedNum) || 0) + importe);
+    totals.set(normalizedNum, {
+      totalSinIva: parseComparableNumber(item?.total_sin_iva),
+      totalConIva: parseComparableNumber(item?.total),
+      totalEstimado: Boolean(item?.total_estimado) || isTotalFallbackFlagEnabled(item?.total_calculado_por_suma),
+      totalFallbackWarning: item?.total_fallback_warning || null
+    });
   });
 
   return totals;
@@ -3687,7 +3694,10 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
     let totalDetectedSinIva = null;
     let totalDetectedFallbackUsed = false;
     let totalDetectedFallbackWarning = null;
-    const facturaTotalForAlbaran = facturaTotalsByAlbaran.get(normalizeAlbaranNumberForMatch(albaranNum)) ?? null;
+    const facturaTotalForAlbaran = facturaTotalsByAlbaran.get(normalizeAlbaranNumberForMatch(albaranNum)) || null;
+    if (facturaTotalForAlbaran?.totalEstimado) {
+      totalFallbackWarnings.push(`${facturaTotalForAlbaran.totalFallbackWarning || buildTotalFallbackWarningLabel('albarán')} Albarán: ${albaranNum} (dentro de la factura).`);
+    }
     if (totalTxt) {
       const totalText = await downloadDriveFileToString(totalTxt);
       const extractedTotals = extractTotalsDetectedFromTotalTxtText(totalText);
@@ -3702,9 +3712,11 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
 
     albaranTotalsComparison.push({
       albaranNum,
-      totalFactura: facturaTotalForAlbaran,
-      totalFacturaSinIva: facturaTotalForAlbaran,
-      totalFacturaConIva: null,
+      // Antes solo había "totalFacturaSinIva" (sumando líneas, sin distinguir con/sin IVA).
+      // Ahora el backend da directamente ambos, así que "totalFacturaConIva" deja de ser null.
+      totalFactura: facturaTotalForAlbaran?.totalConIva ?? null,
+      totalFacturaSinIva: facturaTotalForAlbaran?.totalSinIva ?? null,
+      totalFacturaConIva: facturaTotalForAlbaran?.totalConIva ?? null,
       totalAlbaranDetectado: totalDetected,
       totalAlbaranDetectadoSinIva: totalDetectedSinIva,
       totalAlbaranDetectadoConIva: totalDetected,
