@@ -7,6 +7,10 @@ const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
 const { spawn } = require('child_process');
+const {
+  cleanAlbaranDisplayId,
+  normalizeAlbaranNumberForMatch
+} = require('./lib/albaranNumbers');
 
 const WATCH_SUBFOLDERS = ['Albaranes', 'Facturas'];
 const WATCHED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.txt'];
@@ -263,26 +267,6 @@ function normalizeArticleName(value) {
     .toLowerCase()
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function cleanAlbaranDisplayId(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  // Alantr puede anteponer la etiqueta separada "AL" al número real.
-  // Se exige separador para no alterar identificadores genuinos como ALANTR123.
-  return raw.replace(/^AL(?:[\s._\-/:#]+|(?=AB\d))/i, '').trim();
-}
-
-function normalizeAlbaranNumberForMatch(value) {
-  return cleanAlbaranDisplayId(value)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    // Tolerar prefijos habituales en algunas facturas/albaranes.
-    // Ejemplos equivalentes: "AB/X", "AL AB/X", "ALBARAN AB/X", "ALB-AB/X".
-    .replace(/^(?:(?:albaran(?:es)?|alb)[\s._\-/:#]+)+/i, '')
-    .replace(/[^a-z0-9]/g, '');
 }
 
 function buildAlbaranFileBaseCandidates(albaranNum) {

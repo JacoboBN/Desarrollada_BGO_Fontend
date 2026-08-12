@@ -1,6 +1,10 @@
 const { ipcRenderer } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const {
+  cleanAlbaranDisplayId,
+  normalizeAlbaranNumberForMatch: normalizeAlbaranId
+} = require('./lib/albaranNumbers');
 
 // Elementos del DOM
 const loginSection = document.getElementById('login-section');
@@ -288,23 +292,6 @@ function areAllExpectedAlbaranesReady(compareResult = {}) {
     .map(normalizeAlbaranId)
     .filter(Boolean)
     .every(num => matchedSet.has(num));
-}
-
-function cleanAlbaranDisplayId(value = '') {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-
-  // Alantr puede anteponer la etiqueta separada "AL" al número real.
-  // No se elimina si forma parte del código, como en ALANTR123.
-  return raw.replace(/^AL(?:[\s._\-/:#]+|(?=AB\d))/i, '').trim();
-}
-
-function normalizeAlbaranId(value = '') {
-  return cleanAlbaranDisplayId(value)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '');
 }
 
 function extractExpectedAlbaranesFromFactura(analysisText = '') {
