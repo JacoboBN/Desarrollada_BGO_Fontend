@@ -2414,6 +2414,25 @@ ipcMain.handle('open-bd-window', async () => {
   return { success: true };
 });
 
+ipcMain.handle('get-database-view', async (event, tableName = null, limit = 100) => {
+  const sessionId = store.get('sessionId');
+  if (!sessionId) {
+    throw new Error('Sesión requerida para ver la base de datos');
+  }
+
+  try {
+    const response = await postWithRetry(`${BACKEND_URL}/database/view`, {
+      sessionId,
+      tableName,
+      limit
+    }, { timeout: 30000, retries: 1 });
+    return response.data;
+  } catch (error) {
+    mainLog('error', 'get-database-view:error', serializeError(error));
+    throw new Error(error.response?.data?.error || 'No se pudo cargar la base de datos');
+  }
+});
+
 ipcMain.handle('notify-tasks-completed', async () => {
   const title = 'Tareas completadas';
   const body = 'Se han procesado todos los archivos de la cola.';

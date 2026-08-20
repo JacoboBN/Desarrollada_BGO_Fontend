@@ -870,6 +870,201 @@
       white-space: pre-line;
     }
 
+    .database-view {
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+      background: #ffffff;
+      border: 1px solid #d1d1d1;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+
+    .database-view.active {
+      display: flex;
+    }
+
+    .database-header,
+    .database-table-toolbar,
+    .database-detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .database-title h2 {
+      font-size: 20px;
+      color: #222;
+      margin-bottom: 4px;
+    }
+
+    .database-subtitle,
+    .database-table-meta {
+      color: #666;
+      font-size: 13px;
+    }
+
+    .database-readonly-badge {
+      display: inline-flex;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #e8f5e9;
+      color: #1b5e20;
+      font-size: 12px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+
+    .database-layout {
+      display: grid;
+      grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+      gap: 14px;
+      min-height: 420px;
+    }
+
+    .database-sidebar {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background: #fafafa;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 620px;
+      overflow: auto;
+    }
+
+    .database-table-btn {
+      border: 1px solid #d7d7d7;
+      background: #fff;
+      color: #222;
+      border-radius: 8px;
+      padding: 9px 10px;
+      text-align: left;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .database-table-btn.active {
+      background: #007bff;
+      border-color: #007bff;
+      color: #fff;
+    }
+
+    .database-table-wrap,
+    .database-detail {
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      min-width: 0;
+    }
+
+    .database-table-toolbar,
+    .database-detail-header {
+      align-items: center;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e5e5;
+      background: #fafafa;
+    }
+
+    .database-disabled-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .database-disabled-actions .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .database-scroll {
+      overflow: auto;
+      max-height: 560px;
+    }
+
+    .database-grid,
+    .database-detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .database-grid th,
+    .database-grid td,
+    .database-detail-table th,
+    .database-detail-table td {
+      border-bottom: 1px solid #e8e8e8;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .database-grid th,
+    .database-grid td {
+      border-right: 1px solid #f0f0f0;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .database-grid th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f1f3f5;
+      color: #333;
+      font-weight: 700;
+    }
+
+    .database-grid tbody tr:hover {
+      background: #eef6ff;
+    }
+
+    .database-detail-table th {
+      width: 220px;
+      background: #f7f7f7;
+      color: #333;
+    }
+
+    .database-detail-value {
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: #222;
+    }
+
+    .database-detail-close {
+      border: none;
+      background: transparent;
+      font-size: 18px;
+      cursor: pointer;
+      color: #555;
+    }
+
+    .database-empty,
+    .database-error,
+    .database-loading {
+      padding: 18px;
+      border-radius: 10px;
+      font-size: 14px;
+    }
+
+    .database-empty { background: #f8f9fa; color: #555; }
+    .database-loading { background: #d1ecf1; color: #0c5460; }
+    .database-error { background: #f8d7da; color: #721c24; }
+
+    @media (max-width: 900px) {
+      .database-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @keyframes spin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
@@ -1037,9 +1232,7 @@
 
           <section class="dashboard">
             <button class="tile disabled" data-action="centros" disabled>Centros</button>
-            <!-- <button class="tile" data-action="bases-datos">Bases de datos</button> -->
-            <button class="tile disabled" data-action="bases-datos" disabled>Bases de datos</button>
-            <!-- <button class="tile" data-action="bases-datos">Bases de datos</button> -->
+            <button class="tile" data-action="bases-datos">Bases de datos</button>
 
 
             <button class="tile" data-action="facturas">Facturas</button>
@@ -1047,6 +1240,34 @@
           </section>
 
           <section class="content">
+            <div id="database-view" class="database-view" aria-live="polite">
+              <div class="database-header">
+                <div class="database-title">
+                  <h2>Bases de datos <span class="database-readonly-badge">Solo lectura</span></h2>
+                  <div class="database-subtitle" id="database-subtitle">Consulta lo que se está guardando sin poder modificar datos.</div>
+                </div>
+                <div class="actions">
+                  <button class="btn btn-secondary small" id="database-refresh-btn" type="button">Recargar</button>
+                </div>
+              </div>
+
+              <div class="database-layout">
+                <aside class="database-sidebar" id="database-table-list"></aside>
+                <div class="database-table-wrap">
+                  <div class="database-table-toolbar">
+                    <div class="database-table-meta" id="database-table-meta">Selecciona una tabla.</div>
+                    <div class="database-disabled-actions" title="Preparado para una fase futura. Ahora está en solo lectura.">
+                      <button class="btn btn-secondary small" type="button" disabled>Editar fila</button>
+                      <button class="btn small" type="button" disabled>Modificar</button>
+                      <button class="btn btn-danger small" type="button" disabled>Eliminar fila</button>
+                    </div>
+                  </div>
+                  <div class="database-scroll" id="database-table-content"></div>
+                </div>
+              </div>
+
+              <div class="database-detail" id="database-row-detail" style="display:none;"></div>
+            </div>
             <div id="folder-summary" class="panel"></div>
             <div id="files-list" class="files-grid"></div>
             <!-- <div class="startup-status" id="startup-status">Estado de inicio: esperando...</div> -->

@@ -17,6 +17,13 @@ const tileButtons = document.querySelectorAll('.tile');
 
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
+const databaseView = document.getElementById('database-view');
+const databaseTableList = document.getElementById('database-table-list');
+const databaseTableContent = document.getElementById('database-table-content');
+const databaseTableMeta = document.getElementById('database-table-meta');
+const databaseSubtitle = document.getElementById('database-subtitle');
+const databaseRefreshBtn = document.getElementById('database-refresh-btn');
+const databaseRowDetail = document.getElementById('database-row-detail');
 
 const queueList = document.getElementById('upload-queue-list');
 const queueTimeEstimateEl = document.getElementById('queue-time-estimate');
@@ -1376,6 +1383,181 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#39;');
 }
 
+const databaseViewerState = {
+  tables: [],
+  selectedTable: null,
+  columns: [],
+  rows: [],
+  totalRows: 0,
+  limit: 100
+};
+
+function stringifyDatabaseValue(value) {
+  if (value === null || value === undefined) return '—';
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function compactDatabaseValue(value, maxLength = 120) {
+  const text = stringifyDatabaseValue(value).replace(/\s+/g, ' ').trim();
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
+}
+
+function setDatabasePanelVisible(isVisible) {
+  if (databaseView) {
+    databaseView.classList.toggle('active', Boolean(isVisible));
+  }
+
+  ['folder-summary', 'files-list', 'upload-queue-panel'].forEach((id) => {
+    const element = document.getElementById(id);
+    if (element) element.style.display = isVisible ? 'none' : '';
+  });
+
+  if (!isVisible && databaseRowDetail) {
+    databaseRowDetail.style.display = 'none';
+    databaseRowDetail.innerHTML = '';
+  }
+}
+
+function renderDatabaseTableButtons() {
+  if (!databaseTableList) return;
+  databaseTableList.innerHTML = '';
+
+  databaseViewerState.tables.forEach((table) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'database-table-btn';
+    button.classList.toggle('active', table.name === databaseViewerState.selectedTable?.name);
+    button.textContent = table.label || table.name;
+    button.title = table.description || table.name;
+    button.addEventListener('click', () => loadDatabaseView(table.name));
+    databaseTableList.appendChild(button);
+  });
+}
+
+function renderDatabaseDetail(row, rowIndex) {
+  if (!databaseRowDetail || !databaseViewerState.selectedTable) return;
+
+  const title = `${databaseViewerState.selectedTable.label || databaseViewerState.selectedTable.name} · fila ${rowIndex + 1}`;
+  const rowsHtml = databaseViewerState.columns.map((column) => `
+    <tr>
+      <th>${escapeHtml(column.name)}</th>
+      <td><div class="database-detail-value">${escapeHtml(stringifyDatabaseValue(row[column.name]))}</div></td>
+    </tr>
+  `).join('');
+
+  databaseRowDetail.innerHTML = `
+    <div class="database-detail-header">
+      <span>${escapeHtml(title)}</span>
+      <button class="database-detail-close" type="button" aria-label="Cerrar detalle">×</button>
+    </div>
+    <table class="database-detail-table"><tbody>${rowsHtml}</tbody></table>
+  `;
+
+  databaseRowDetail.querySelector('.database-detail-close')?.addEventListener('click', () => {
+    databaseRowDetail.style.display = 'none';
+    databaseRowDetail.innerHTML = '';
+  });
+
+  databaseRowDetail.style.display = 'block';
+  databaseRowDetail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderDatabaseTable() {
+  if (!databaseTableContent) return;
+  renderDatabaseTableButtons();
+
+  const table = databaseViewerState.selectedTable;
+  if (!table) {
+    databaseTableContent.innerHTML = '<div class="database-empty">Selecciona una tabla para ver sus filas.</div>';
+    return;
+  }
+
+  if (databaseSubtitle) {
+    databaseSubtitle.textContent = `${table.description || ''} Doble click en una fila para ver todos sus campos ordenados.`;
+  }
+  if (databaseTableMeta) {
+    databaseTableMeta.textContent = `${table.label || table.name}: ${databaseViewerState.rows.length} de ${databaseViewerState.totalRows} filas mostradas (límite ${databaseViewerState.limit}).`;
+  }
+  if (!databaseViewerState.rows.length) {
+    databaseTableContent.innerHTML = '<div class="database-empty">No hay filas guardadas en esta tabla para tu organización.</div>';
+    return;
+  }
+
+  const headersHtml = databaseViewerState.columns
+    .map((column) => `<th title="${escapeHtml(column.type || '')}">${escapeHtml(column.name)}</th>`)
+    .join('');
+  const bodyHtml = databaseViewerState.rows.map((row, rowIndex) => {
+    const cells = databaseViewerState.columns.map((column) => {
+      const fullValue = stringifyDatabaseValue(row[column.name]);
+      return `<td title="${escapeHtml(fullValue)}">${escapeHtml(compactDatabaseValue(row[column.name]))}</td>`;
+    }).join('');
+    return `<tr data-row-index="${rowIndex}" title="Doble click para ver el detalle completo">${cells}</tr>`;
+  }).join('');
+
+  databaseTableContent.innerHTML = `
+    <table class="database-grid">
+      <thead><tr>${headersHtml}</tr></thead>
+      <tbody>${bodyHtml}</tbody>
+    </table>
+  `;
+
+  databaseTableContent.querySelectorAll('tbody tr').forEach((rowElement) => {
+    rowElement.addEventListener('dblclick', () => {
+      const rowIndex = Number(rowElement.dataset.rowIndex);
+      const row = databaseViewerState.rows[rowIndex];
+      if (row) renderDatabaseDetail(row, rowIndex);
+    });
+  });
+}
+
+async function loadDatabaseView(tableName = null) {
+  if (!databaseView) return;
+
+  setDatabasePanelVisible(true);
+  if (databaseTableContent) {
+    databaseTableContent.innerHTML = '<div class="database-loading">Cargando datos guardados...</div>';
+  }
+  if (databaseTableMeta) databaseTableMeta.textContent = 'Cargando base de datos...';
+  if (databaseRowDetail) {
+    databaseRowDetail.style.display = 'none';
+    databaseRowDetail.innerHTML = '';
+  }
+
+  try {
+    const payload = await ipcRenderer.invoke('get-database-view', tableName, databaseViewerState.limit);
+    databaseViewerState.tables = payload.tables || [];
+    databaseViewerState.selectedTable = payload.selectedTable || null;
+    databaseViewerState.columns = payload.columns || [];
+    databaseViewerState.rows = payload.rows || [];
+    databaseViewerState.totalRows = Number(payload.totalRows || 0);
+    databaseViewerState.limit = Number(payload.limit || databaseViewerState.limit);
+
+    breadcrumb = [{ id: null, name: 'Mi unidad' }, { id: '__database__', name: 'Bases de datos' }];
+    renderBreadcrumbs();
+    renderDatabaseTable();
+  } catch (error) {
+    uiLog('error', 'loadDatabaseView:error', serializeUiError(error));
+    if (databaseTableContent) {
+      databaseTableContent.innerHTML = `<div class="database-error">${escapeHtml(error.message || 'No se pudo cargar la base de datos.')}</div>`;
+    }
+    if (databaseTableMeta) databaseTableMeta.textContent = 'Error cargando base de datos.';
+    showStatus(`Error cargando base de datos: ${error.message || error}`, 'error');
+  }
+}
+
+if (databaseRefreshBtn) {
+  databaseRefreshBtn.addEventListener('click', () => {
+    loadDatabaseView(databaseViewerState.selectedTable?.name || null);
+  });
+}
+
 function formatIncongruentAlbaranLineHtml(line = '') {
   const cleaned = String(line || '').replace(/^\-\s*/, '').trim();
   const match = cleaned.match(/^Albar[aá]n\s+(.+?)\s+\((.+?)\):\s*(.+)$/i);
@@ -2609,6 +2791,7 @@ async function loadFolderContents(folderId = null, pushToBreadcrumb = true, fold
     pushToBreadcrumb,
     folderName
   });
+  setDatabasePanelVisible(false);
   try {
     const res = await ipcRenderer.invoke('list-contents', folderId);
     const files = res.files || [];
@@ -2761,6 +2944,10 @@ function renderBreadcrumbs() {
     span.style.marginRight = '8px';
     span.textContent = (b.name || 'Carpeta') + (idx < breadcrumb.length - 1 ? ' /' : '');
     span.addEventListener('click', () => {
+      if (b.id === '__database__') {
+        loadDatabaseView(databaseViewerState.selectedTable?.name || null);
+        return;
+      }
       // go to this breadcrumb
       breadcrumb = breadcrumb.slice(0, idx + 1);
       loadFolderContents(b.id, false, b.name);
@@ -2779,6 +2966,10 @@ function renderBreadcrumbs() {
       s.style.color = '#333';
       s.textContent = b.name || 'Carpeta';
       s.addEventListener('click', () => {
+        if (b.id === '__database__') {
+          loadDatabaseView(databaseViewerState.selectedTable?.name || null);
+          return;
+        }
         breadcrumb = breadcrumb.slice(0, idx + 1);
         loadFolderContents(b.id, false, b.name);
       });
@@ -2857,7 +3048,7 @@ tileButtons.forEach(tile => {
       return;
     }
     if (action === 'bases-datos') {
-      await ipcRenderer.invoke('open-bd-window');
+      await loadDatabaseView(databaseViewerState.selectedTable?.name || null);
       return;
     }
 
