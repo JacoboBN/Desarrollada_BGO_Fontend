@@ -1087,14 +1087,14 @@
     <div class="upload-drop-modal" id="upload-drop-modal">
       <div class="upload-drop-card">
         <div class="upload-drop-header">
-          <div class="upload-drop-title" id="upload-drop-title">Subir archivo</div>
+          <div class="upload-drop-title" id="upload-drop-title">Subir documentos</div>
           <button class="upload-drop-close" id="upload-drop-close" aria-label="Cerrar">×</button>
         </div>
         <div class="upload-drop-zones">
           <div class="upload-drop-zone" id="upload-drop-zone">SUBIR CARPETA COMPLETA</div>
-          <div class="upload-drop-zone" id="upload-drop-zone-files">SUBIR ARCHIVO/S</div>
+          <div class="upload-drop-zone" id="upload-drop-zone-files">SUBIR ARCHIVOS</div>
         </div>
-        <div class="upload-drop-hint">Puedes arrastrar archivos o hacer click para seleccionarlos.</div>
+          <div class="upload-drop-hint">Puedes mezclar facturas y albaranes: la aplicación identifica cada documento automáticamente.</div>
       </div>
     </div>
 
@@ -1150,11 +1150,14 @@
           </div>
 
           <nav class="menu">
+            <button class="menu-item" data-action="upload-documents">Subir documentos</button>
             <button class="menu-item" data-action="open-albaranes">Albaranes</button>
             <button class="menu-item" data-action="open-facturas">Facturas</button>
-            <button class="menu-item" data-action="upload-albaran">Subir Albarán (2)</button>
-            <button class="menu-item" data-action="upload-factura">Subir Factura (1)</button>
           </nav>
+
+          <div class="panel" style="font-size:12px; line-height:1.45; color:#555;">
+            Puedes subir facturas y albaranes en cualquier orden. Se detectan y comparan automáticamente cuando están relacionados.
+          </div>
 
           <button class="btn btn-secondary small" id="logout-btn">Cerrar sesión</button>
 
@@ -1273,7 +1276,7 @@
             <!-- <div class="startup-status" id="startup-status">Estado de inicio: esperando...</div> -->
             <div class="queue-panel" id="upload-queue-panel">
               <div class="queue-header">
-                <h3>Seguimiento de archivos</h3>
+                <h3>Documentos subidos</h3>
                 <div class="queue-bulk-controls hidden" id="queue-bulk-controls">
                   <button class="btn btn-secondary small" id="queue-select-all-btn">Seleccionar todo</button>
                   <button class="btn btn-danger small" id="queue-cancel-selected-btn">Cancelar seleccionados</button>
@@ -1281,7 +1284,7 @@
               </div>
               <div class="queue-estimate" id="queue-time-estimate"></div>
               <div class="queue-list" id="upload-queue-list">
-                <p style="color:#666">No hay archivos en cola.</p>
+                <p style="color:#666">Aún no has subido documentos.</p>
               </div>
             </div>
           </section>

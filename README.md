@@ -6,12 +6,12 @@ Aplicación de escritorio Electron para gestionar facturas y albaranes con Googl
 
 - Login con Google mediante el backend.
 - Navegación y búsqueda de archivos/carpetas en Google Drive.
-- Subida manual de facturas y albaranes.
+- Subida única de documentos: se pueden mezclar facturas y albaranes y la IA identifica cada tipo automáticamente.
 - Envío de documentos al backend para análisis asíncrono con IA.
 - Polling de jobs y cancelación de elementos en cola.
 - Creación de archivos `.txt` de resumen/totales en Drive.
 - Comparación de facturas contra albaranes por totales.
-- Reevaluación de facturas pendientes independientemente del orden de subida.
+- Comparación automática de documentos relacionados, independientemente del orden de subida.
 - Envío de emails de resultado mediante Gmail autenticado.
 - Actualización automática con `electron-updater` y releases de GitHub.
 

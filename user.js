@@ -38,7 +38,7 @@ const uploadQueue = new Map();
 const canceledQueueIds = new Set();
 const queueFilePathMap = new Map(); // queueId → Drive file ID del archivo subido (para borrarlo de Drive si se cancela antes de finalizar el pipeline IA)
 const selectedQueueIds = new Set();
-const TERMINAL_QUEUE_STATUSES = new Set(['Error', 'Cancelado', 'Enviado', 'Movido', 'Email']);
+const TERMINAL_QUEUE_STATUSES = new Set(['Error', 'Cancelado', 'Finalizado']);
 const ESTIMATED_SECONDS_PER_DOC_MIN = 90;
 const ESTIMATED_SECONDS_PER_DOC_MAX = 120;
 let queueCompletionNotified = false;
@@ -62,10 +62,6 @@ const backendAlertTitle = document.getElementById('backend-alert-title');
 const backendAlertMessage = document.getElementById('backend-alert-message');
 const backendAlertHelp = document.getElementById('backend-alert-help');
 const backendAlertClose = document.getElementById('backend-alert-close');
-const compareModeTotalesBtn = document.getElementById('compare-mode-totales');
-const compareModeComplejoBtn = document.getElementById('compare-mode-complejo');
-const uploadOrderFacturasFirstBtn = document.getElementById('upload-order-facturas-first');
-const uploadOrderAlbaranesFirstBtn = document.getElementById('upload-order-albaranes-first');
 const forceCompareBtn = document.getElementById('force-compare-btn');
 const appVersionEl = document.getElementById('app-version');
 const updaterMessageEl = document.getElementById('updater-message');
@@ -81,72 +77,16 @@ let currentUpdaterStatus = {
   releaseUrl: 'https://github.com/JacoboBN/frontend_factura_albaran/releases/latest'
 };
 
-const DEFAULT_QUEUE_STEPS = ['Esperando', 'Subiendo', 'IA', 'Moviendo', 'Movido'];
-const FACTURA_QUEUE_STEPS = ['Esperando', 'Subiendo', 'IA', 'Esperando albaranes', 'Comparando', 'Comparado', 'Email'];
+const DEFAULT_QUEUE_STEPS = ['En cola', 'Subiendo', 'Analizando', 'Comparando', 'Finalizado'];
 let currentUploadTargetFolder = null;
 let uploadFlowTail = Promise.resolve();
-let currentCompareMode = 'totales';
-let currentUploadOrder = 'order-independent';
 const pendingFacturaComparisons = new Map();
-
-function setUploadOrder(mode = 'facturas-first') {
-  const normalized = 'order-independent';
-  currentUploadOrder = normalized;
-
-  if (uploadOrderFacturasFirstBtn) {
-    uploadOrderFacturasFirstBtn.classList.toggle('active', normalized === 'facturas-first');
-  }
-  if (uploadOrderAlbaranesFirstBtn) {
-    uploadOrderAlbaranesFirstBtn.classList.toggle('active', normalized === 'albaranes-first');
-  }
-}
-
-function setCompareMode(mode = 'totales') {
-  // SOLICITUD CLIENTE: forzar modo solo TOTALES.
-  // Se mantiene la lógica anterior comentada.
-  // const normalized = String(mode || '').toLowerCase() === 'complejo' ? 'complejo' : 'totales';
-  const normalized = 'totales';
-  currentCompareMode = normalized;
-
-  if (compareModeTotalesBtn) {
-    compareModeTotalesBtn.classList.toggle('active', normalized === 'totales');
-  }
-  if (compareModeComplejoBtn) {
-    compareModeComplejoBtn.classList.toggle('active', normalized === 'complejo');
-  }
-}
-
-if (compareModeTotalesBtn) {
-  compareModeTotalesBtn.addEventListener('click', () => setCompareMode('totales'));
-}
-
-if (compareModeComplejoBtn) {
-  // SOLICITUD CLIENTE: desactivar modo complejo (solo totales).
-  // compareModeComplejoBtn.addEventListener('click', () => setCompareMode('complejo'));
-  compareModeComplejoBtn.disabled = true;
-  compareModeComplejoBtn.title = 'Modo desactivado: solo comparación por totales';
-}
-
-setCompareMode('totales');
-
-if (uploadOrderFacturasFirstBtn) {
-  uploadOrderFacturasFirstBtn.addEventListener('click', () => setUploadOrder('facturas-first'));
-}
-
-if (uploadOrderAlbaranesFirstBtn) {
-  // Flujo unificado solicitado: desactivar opción albaranes primero.
-  // uploadOrderAlbaranesFirstBtn.addEventListener('click', () => setUploadOrder('albaranes-first'));
-  uploadOrderAlbaranesFirstBtn.disabled = true;
-  uploadOrderAlbaranesFirstBtn.title = 'Modo desactivado: flujo único (facturas primero)';
-}
 
 if (forceCompareBtn) {
   // Solicitud cliente: desactivar comparación manual forzada.
   forceCompareBtn.disabled = true;
   forceCompareBtn.title = 'Desactivado por configuración';
 }
-
-setUploadOrder('facturas-first');
 
 function renderUpdaterStatus(payload = {}) {
   currentUpdaterStatus = {
@@ -222,24 +162,20 @@ if (updaterReleaseBtn) {
 function normalizeQueueStep(step) {
   const rawStep = String(step || '').trim().toLowerCase();
   if (['pendiente', 'esperando', 'en cola', 'cola', 'queued', 'queue'].includes(rawStep)) {
-    return 'Esperando';
+    return 'En cola';
   }
   if (rawStep === 'subiendo') return 'Subiendo';
-  // Unificar pipeline en solo IA (sin etapa OCR visible/operativa).
-  if (rawStep === 'ocr') return 'IA';
-  if (rawStep === 'ia') return 'IA';
-  if (rawStep === 'esperando albaranes') return 'Esperando albaranes';
+  if (rawStep === 'ocr' || rawStep === 'ia') return 'Analizando';
+  if (rawStep === 'esperando albaranes') return 'Finalizado';
   if (rawStep === 'comparando') return 'Comparando';
-  if (rawStep === 'comparado') return 'Comparado';
-  if (rawStep === 'email') return 'Email';
-  if (rawStep === 'enviando' || rawStep === 'moviendo') return 'Moviendo';
-  if (rawStep === 'enviado' || rawStep === 'movido') return 'Movido';
+  if (rawStep === 'comparado' || rawStep === 'email') return 'Finalizado';
+  if (rawStep === 'enviando' || rawStep === 'moviendo' || rawStep === 'enviado' || rawStep === 'movido') return 'Finalizado';
   return step;
 }
 
 function canQueueItemBeSelectedForBulkCancel(item) {
   if (!item) return false;
-  return ['Esperando', 'Subiendo', 'IA'].includes(item.status);
+  return ['En cola', 'Subiendo', 'Analizando'].includes(item.status);
 }
 
 function canQueueItemBeCancelled(item) {
@@ -247,7 +183,7 @@ function canQueueItemBeCancelled(item) {
 }
 
 function isQueueTerminalSuccessStatus(status) {
-  return ['Enviado', 'Movido', 'Email'].includes(status);
+  return status === 'Finalizado';
 }
 
 function formatDurationFromSeconds(totalSeconds = 0) {
@@ -284,7 +220,7 @@ function refreshQueueTimeEstimate() {
   const minLabel = formatDurationFromSeconds(minSeconds);
   const maxLabel = formatDurationFromSeconds(maxSeconds);
 
-  queueTimeEstimateEl.textContent = `Tiempo estimado restante: ${minLabel} - ${maxLabel} (${pendingItemsCount} documento(s) pendiente(s)).`;
+  queueTimeEstimateEl.textContent = `Tiempo estimado restante: ${minLabel} - ${maxLabel} (${pendingItemsCount} documento(s)).`;
   queueTimeEstimateEl.classList.add('active');
 }
 
@@ -372,9 +308,9 @@ async function sendMissingAlbaranesAlertForPendingFactura({
   const availableLabel = formatAlbaranesListLabel(availableAlbaranes);
   const missingLabel = formatAlbaranesListLabel(missingAlbaranes);
 
-  const subject = `⚠️ Factura en espera por albaranes faltantes (${facturaRef})`;
+  const subject = `ℹ️ Factura procesada: faltan documentos relacionados (${facturaRef})`;
   const text = [
-    'AVISO: FACTURA PENDIENTE POR ALBARANES FALTANTES',
+    'AVISO: FALTAN DOCUMENTOS RELACIONADOS PARA LA COMPARACIÓN',
     '',
     `Factura: ${facturaRef}`,
     `Nombre archivo factura: ${item?.fileName || 'N/A'}`,
@@ -382,13 +318,13 @@ async function sendMissingAlbaranesAlertForPendingFactura({
     `Albaranes disponibles: ${availableLabel}`,
     `Albaranes faltantes: ${missingLabel}`,
     '',
-    'Estado actual: Esperando albaranes',
-    'Acción: No se mueve ni se marca como comparada/procesada hasta que estén todos los albaranes.'
+    'Estado actual: Documento procesado',
+    'Acción: La comparación se realizará automáticamente cuando estén disponibles los documentos relacionados.'
   ].join('\n');
 
   const html = `
     <div style="font-family: Arial, sans-serif; color: #222; line-height: 1.5; max-width: 760px;">
-      <h2 style="margin: 0 0 12px; color: #8a1c1c;">⚠️ <strong>Factura en espera por albaranes faltantes</strong></h2>
+      <h2 style="margin: 0 0 12px; color: #8a1c1c;">ℹ️ <strong>Faltan documentos relacionados para comparar la factura</strong></h2>
 
       <div style="background:#f8f9fb; border:1px solid #e6e9ef; border-radius:8px; padding:12px; margin-bottom:12px;">
         <p style="margin:0 0 6px;"><strong>Factura:</strong> <strong>${escapeHtml(facturaRef)}</strong></p>
@@ -398,8 +334,8 @@ async function sendMissingAlbaranesAlertForPendingFactura({
         <p style="margin:0;"><strong>Albaranes faltantes:</strong> <strong>${escapeHtml(missingLabel)}</strong></p>
       </div>
 
-      <p style="margin:0;"><strong>Estado actual:</strong> Esperando albaranes</p>
-      <p style="margin:6px 0 0;"><strong>Acción:</strong> No se mueve ni se marca como comparada/procesada hasta que estén todos los albaranes.</p>
+      <p style="margin:0;"><strong>Estado actual:</strong> Documento procesado</p>
+      <p style="margin:6px 0 0;"><strong>Acción:</strong> La comparación se realizará automáticamente cuando estén disponibles los documentos relacionados.</p>
     </div>
   `;
 
@@ -439,7 +375,7 @@ async function comparePendingFacturasIfReady() {
             status: 'pending',
             result: { expectedAlbaranes, missingAlbaranes: missing, source: 'manual-upload' }
           });
-          updateQueueStep(queueId, 'Esperando albaranes');
+          updateQueueStep(queueId, 'Finalizado');
           const missingSet = new Set(missing.map((num) => String(num || '').trim()).filter(Boolean));
           const available = expectedAlbaranes.filter((num) => {
             const clean = String(num || '').trim();
@@ -475,9 +411,9 @@ async function comparePendingFacturasIfReady() {
           status: compareResult?.needsReview ? 'review' : 'pending',
           result: compareResult
         });
-        updateQueueStep(queueId, 'Esperando albaranes');
+        updateQueueStep(queueId, 'Finalizado');
         if (compareResult?.needsReview) {
-          showStatus(`Factura ${item?.fileName || ''} pendiente de revisión: no se detectaron referencias fiables de albarán.`, 'loading');
+          showStatus(`Factura ${item?.fileName || ''} procesada; será necesaria una revisión si no se identifican documentos relacionados.`, 'loading');
           continue;
         }
         const expectedFromCompare = Array.isArray(compareResult?.expectedAlbaranes)
@@ -619,14 +555,6 @@ function normalizeQueueStepsList(steps = []) {
 }
 
 function resolveQueueSteps({ source = '', docType = '', steps = null } = {}) {
-  // Importante: ignoramos pasos predefinidos por origen (startup/manual)
-  // para forzar un único pipeline por tipo de documento.
-  const normalizedDocType = String(docType || '').toLowerCase();
-
-  if (normalizedDocType === 'factura') {
-    return [...FACTURA_QUEUE_STEPS];
-  }
-
   return [...DEFAULT_QUEUE_STEPS];
 }
 
@@ -1923,10 +1851,10 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
         );
         console.warn('No se pudieron crear carpetas estándar:', folderError);
       }
-      const docType = (parentFolderName || '').toLowerCase().includes('factura') ? 'factura' : 'albaran';
-      const parentFolder = await findFolderByName(parentFolderName, true);
+      const docType = 'auto';
+      const parentFolder = await findFolderByName('Albaranes', true);
       if (!parentFolder) {
-        showStatus(`No se encontró la carpeta "${parentFolderName}" en Drive`, 'error');
+        showStatus('No se encontró la estructura de documentos en Drive.', 'error');
         return;
       }
 
@@ -1935,17 +1863,26 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
         parentFolderName,
         targetId: target?.id
       });
-      const targetLabel = `${parentFolderName}/No procesado`;
+      const targetLabel = 'Documentos pendientes de clasificar';
 
       let noComparadoFolder = null;
       let informesNoComparadoFolder = null;
       let documentosFolder = null;
+      let facturasNoComparadoFolder = null;
+      let facturasInformesNoComparadoFolder = null;
+      let facturasDocumentosFolder = null;
       try {
         noComparadoFolder = await getOrCreateChildFolder(parentFolder.id, 'No comparado');
-        informesNoComparadoFolder = await getOrCreateInformesNoComparadoFolder(parentFolderName);
-        documentosFolder = await getOrCreateChildFolder(parentFolder.id, 'Documentos');
+        informesNoComparadoFolder = await getOrCreateInformesNoComparadoFolder('Albaranes');
+        const facturasFolder = await findFolderByName('Facturas', true);
+        if (!facturasFolder) throw new Error('No se encontró la carpeta Facturas');
+        facturasNoComparadoFolder = await getOrCreateChildFolder(facturasFolder.id, 'No comparado');
+        facturasInformesNoComparadoFolder = await getOrCreateInformesNoComparadoFolder('Facturas');
+        facturasDocumentosFolder = await getOrCreateChildFolder(facturasFolder.id, 'Documentos');
       } catch (folderError) {
-        console.warn('No se pudo preparar carpeta No comparado:', folderError);
+        console.warn('No se pudo preparar la estructura de documentos:', folderError);
+        showStatus('No se pudo preparar la estructura de documentos en Drive.', 'error', folderError?.message || '');
+        return;
       }
 
       const preparedItems = [];
@@ -2016,11 +1953,13 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
             originalName: item.fileName,
             queueId: item.queueId,
             postProcess: {
-              txtFolderId: informesNoComparadoFolder?.id || null,
               sourceDriveFileId: item.uploadedFileId || null,
               sourceDriveFromFolderId: target?.id || null,
-              sourceDriveToFolderId: noComparadoFolder?.id || null,
-              sourceFileName: item.fileName
+              sourceFileName: item.fileName,
+              facturaTxtFolderId: facturasInformesNoComparadoFolder?.id || null,
+              facturaSourceDriveToFolderId: facturasNoComparadoFolder?.id || null,
+              albaranTxtFolderId: informesNoComparadoFolder?.id || null,
+              albaranSourceDriveToFolderId: noComparadoFolder?.id || null
             }
           })),
           docType
@@ -2055,15 +1994,13 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               throw new Error(analysisResult?.error || 'Error al analizar archivo');
             }
 
+            const detectedDocType = analysisResult?.raw?.documentType || analysisResult?.documentType || 'unknown';
             uiLog('log', 'uploadFilesToFolder:item-analysis-ok', {
               fileName: item.fileName,
-              docType
+              docType: detectedDocType
             });
 
             const analysisText = analysisResult.analysis || analysisResult?.raw?.analysis || '';
-            if (docType !== 'factura') {
-              updateQueueStep(item.queueId, 'Enviando');
-            }
 
             if (canceledQueueIds.has(item.queueId)) {
               markQueueCancelled(item.queueId);
@@ -2071,24 +2008,22 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               continue;
             }
 
-            if (docType === 'factura') {
+            if (detectedDocType === 'factura') {
               try {
-                if (currentUploadOrder === 'order-independent') {
-                  pendingFacturaComparisons.set(item.queueId, {
-                    item: {
-                      queueId: item.queueId,
-                      fileName: item.fileName,
-                      uploadedFileId: item.uploadedFileId
-                    },
-                    analysisText,
-                    parentFolderName,
-                    documentosFolderId: documentosFolder?.id || null,
-                    noComparadoFolderId: noComparadoFolder?.id || target?.id || null
-                  });
-                  updateQueueStep(item.queueId, 'Esperando albaranes');
-                  showStatus(`Factura ${item.fileName} analizada y guardada. Esperando albaranes para comparar.`, 'loading');
-                  continue;
-                }
+                pendingFacturaComparisons.set(item.queueId, {
+                  item: {
+                    queueId: item.queueId,
+                    fileName: item.fileName,
+                    uploadedFileId: item.uploadedFileId
+                  },
+                  analysisText,
+                  parentFolderName: 'Facturas',
+                  documentosFolderId: facturasDocumentosFolder?.id || null,
+                  noComparadoFolderId: facturasNoComparadoFolder?.id || null
+                });
+                updateQueueStep(item.queueId, 'Finalizado');
+                showStatus(`${item.fileName} se ha procesado. Se comparará automáticamente cuando estén los documentos relacionados.`, 'success');
+                continue;
 
                 updateQueueStep(item.queueId, 'Comparando');
                 const compareResult = await ipcRenderer.invoke('compare-factura-albaranes', {
@@ -2302,13 +2237,8 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               }
             }
 
-            if (docType !== 'factura') {
-              updateQueueStep(item.queueId, 'Enviado');
-            }
-            const finalLabel = noComparadoFolder?.name
-              ? `${parentFolderName}/No comparado`
-              : targetLabel;
-            showStatus(`¡${item.fileName} procesado y enviado a ${finalLabel}!`, 'success');
+            updateQueueStep(item.queueId, 'Finalizado');
+            showStatus(`${item.fileName} se ha procesado correctamente.`, 'success');
 
           } catch (error) {
             uiLog('error', 'uploadFilesToFolder:item-error', {
@@ -2320,15 +2250,9 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
           }
         }
 
-        if (docType === 'factura') {
-          await comparePendingFacturasIfReady();
-        } else {
-          await comparePendingFacturasIfReady();
-          await ipcRenderer.invoke('force-pending-comparison');
-        }
+        await comparePendingFacturasIfReady();
+        await ipcRenderer.invoke('force-pending-comparison');
       }
-
-      await loadFolderContents(noComparadoFolder?.id || target.id, true, noComparadoFolder?.name || target.name || 'No procesado');
     }
   } catch (error) {
     uiLog('error', 'uploadFilesToFolder:error', serializeUiError(error));
@@ -2337,7 +2261,7 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
 }
 
 function queueUploadsAsWaiting(parentFolderName, filePaths = []) {
-  const docType = (parentFolderName || '').toLowerCase().includes('factura') ? 'factura' : 'albaran';
+  const docType = 'auto';
   return filePaths.map((filePath) => {
     const fileName = pathBasename(filePath);
     const queueId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -3043,12 +2967,8 @@ menuButtons.forEach(button => {
       await navigateToFolderByName('Facturas', true);
       return;
     }
-    if (action === 'upload-albaran') {
-      openUploadDropModal('Albaranes');
-      return;
-    }
-    if (action === 'upload-factura') {
-      openUploadDropModal('Facturas');
+    if (action === 'upload-documents') {
+      openUploadDropModal('Documentos');
       return;
     }
   });
@@ -3138,7 +3058,7 @@ function openUploadDropModal(parentFolderName) {
 
   currentUploadTargetFolder = parentFolderName;
   if (uploadDropTitle) {
-    uploadDropTitle.textContent = `Subir ${parentFolderName === 'Facturas' ? 'Factura' : 'Albarán'}`;
+    uploadDropTitle.textContent = 'Subir documentos';
   }
   uploadDropZone.classList.remove('drag-over');
   uploadDropZoneFiles?.classList.remove('drag-over');
@@ -3307,7 +3227,7 @@ ipcRenderer.on('queue-event', (event, payload) => {
 
 function initQueueItem(id, fileName, options = {}) {
   const steps = resolveQueueSteps(options);
-  uploadQueue.set(id, { fileName, status: 'Esperando', error: null, steps });
+  uploadQueue.set(id, { fileName, status: 'En cola', error: null, steps });
   renderQueue();
 }
 
@@ -3448,7 +3368,7 @@ function renderQueue() {
   });
 
   if (uploadQueue.size === 0) {
-    queueList.innerHTML = '<p style="color:#666">No hay archivos en cola.</p>';
+    queueList.innerHTML = '<p style="color:#666">Aún no has subido documentos.</p>';
     queueCompletionNotified = false;
     selectedQueueIds.clear();
     refreshQueueTimeEstimate();

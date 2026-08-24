@@ -87,7 +87,8 @@ const activeJobsByQueueId = new Map();  // queueId → { jobId }
 
 const ANALYZE_ENDPOINTS = {
   albaran: '/analyze/document/albaran/file',
-  factura: '/analyze/document/factura/file'
+  factura: '/analyze/document/factura/file',
+  auto: '/analyze/document/auto/file'
 };
 
 const LEGACY_ANALYZE_TEXT_ENDPOINTS = {
@@ -226,6 +227,7 @@ process.on('unhandledRejection', (reason) => {
 
 function normalizeDocumentType(value) {
   const normalized = (value || '').toString().toLowerCase();
+  if (normalized === 'auto') return 'auto';
   if (normalized.includes('factura')) return 'factura';
   return 'albaran';
 }
@@ -1374,6 +1376,18 @@ async function analyzeFileWithBackendIA(filePath, mimeType = '', originalName = 
     }
     if (pipeline?.sourceFileName) {
       formData.append('postProcessSourceFileName', String(pipeline.sourceFileName));
+    }
+    if (pipeline?.facturaTxtFolderId) {
+      formData.append('facturaTxtFolderId', String(pipeline.facturaTxtFolderId));
+    }
+    if (pipeline?.facturaSourceDriveToFolderId) {
+      formData.append('facturaSourceDriveToFolderId', String(pipeline.facturaSourceDriveToFolderId));
+    }
+    if (pipeline?.albaranTxtFolderId) {
+      formData.append('albaranTxtFolderId', String(pipeline.albaranTxtFolderId));
+    }
+    if (pipeline?.albaranSourceDriveToFolderId) {
+      formData.append('albaranSourceDriveToFolderId', String(pipeline.albaranSourceDriveToFolderId));
     }
     formData.append('file', fs.createReadStream(filePath), {
       filename: originalName || path.basename(filePath),
@@ -3084,9 +3098,7 @@ async function processNoProcesadoFileWithEvents(fileMeta, queueId, options = {})
     }
 
     if (docType === 'factura') {
-      // Las facturas en startup quedan en espera hasta que estén sus albaranes,
-      // exactamente como en flujo de subida cuando se procesa factura primero.
-      emitToRenderer('queue-event', { type: 'step', id: queueId, step: 'Esperando albaranes' });
+      emitToRenderer('queue-event', { type: 'step', id: queueId, step: 'Finalizado' });
       return;
     }
 
@@ -4146,7 +4158,7 @@ async function forcePendingFacturasComparison(trigger = 'manual') {
         emitToRenderer('queue-event', {
           type: 'step',
           id: queueId,
-          step: 'Esperando albaranes',
+          step: 'Finalizado',
           fileName
         });
         waiting += 1;
