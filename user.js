@@ -5,6 +5,10 @@ const {
   cleanAlbaranDisplayId,
   normalizeAlbaranNumberForMatch: normalizeAlbaranId
 } = require('./lib/albaranNumbers');
+const {
+  getMissingExpectedAlbaranes,
+  areAllExpectedAlbaranesReady: areExpectedAlbaranesReady
+} = require('./lib/documentOrder');
 
 // Elementos del DOM
 const loginSection = document.getElementById('login-section');
@@ -82,16 +86,11 @@ const FACTURA_QUEUE_STEPS = ['Esperando', 'Subiendo', 'IA', 'Esperando albaranes
 let currentUploadTargetFolder = null;
 let uploadFlowTail = Promise.resolve();
 let currentCompareMode = 'totales';
-let currentUploadOrder = 'facturas-first';
+let currentUploadOrder = 'order-independent';
 const pendingFacturaComparisons = new Map();
 
 function setUploadOrder(mode = 'facturas-first') {
-  // Flujo unificado solicitado: siempre facturas primero.
-  // Se mantiene la lógica anterior comentada para histórico.
-  // const normalized = String(mode || '').toLowerCase() === 'albaranes-first'
-  //   ? 'albaranes-first'
-  //   : 'facturas-first';
-  const normalized = 'facturas-first';
+  const normalized = 'order-independent';
   currentUploadOrder = normalized;
 
   if (uploadOrderFacturasFirstBtn) {
@@ -290,15 +289,7 @@ function refreshQueueTimeEstimate() {
 }
 
 function areAllExpectedAlbaranesReady(compareResult = {}) {
-  const expected = Array.isArray(compareResult?.expectedAlbaranes) ? compareResult.expectedAlbaranes : [];
-  const matched = Array.isArray(compareResult?.matchedAlbaranes) ? compareResult.matchedAlbaranes : [];
-  if (!expected.length) return true;
-
-  const matchedSet = new Set(matched.map(normalizeAlbaranId).filter(Boolean));
-  return expected
-    .map(normalizeAlbaranId)
-    .filter(Boolean)
-    .every(num => matchedSet.has(num));
+  return areExpectedAlbaranesReady(compareResult);
 }
 
 function extractExpectedAlbaranesFromFactura(analysisText = '') {
@@ -441,8 +432,13 @@ async function comparePendingFacturasIfReady() {
         const listed = await ipcRenderer.invoke('list-contents', informesNoComparado.id);
         const files = (listed?.files || []).filter(file => file.mimeType !== 'application/vnd.google-apps.folder');
 
-        const missing = expectedAlbaranes.filter(num => !hasTotalTxtForAlbaran(files, num));
+        const missing = getMissingExpectedAlbaranes(expectedAlbaranes, files);
         if (missing.length) {
+          await ipcRenderer.invoke('set-invoice-comparison-status', {
+            driveFileId: item?.uploadedFileId || null,
+            status: 'pending',
+            result: { expectedAlbaranes, missingAlbaranes: missing, source: 'manual-upload' }
+          });
           updateQueueStep(queueId, 'Esperando albaranes');
           const missingSet = new Set(missing.map((num) => String(num || '').trim()).filter(Boolean));
           const available = expectedAlbaranes.filter((num) => {
@@ -474,7 +470,16 @@ async function comparePendingFacturasIfReady() {
       });
 
       if (!areAllExpectedAlbaranesReady(compareResult)) {
+        await ipcRenderer.invoke('set-invoice-comparison-status', {
+          driveFileId: item?.uploadedFileId || null,
+          status: compareResult?.needsReview ? 'review' : 'pending',
+          result: compareResult
+        });
         updateQueueStep(queueId, 'Esperando albaranes');
+        if (compareResult?.needsReview) {
+          showStatus(`Factura ${item?.fileName || ''} pendiente de revisión: no se detectaron referencias fiables de albarán.`, 'loading');
+          continue;
+        }
         const expectedFromCompare = Array.isArray(compareResult?.expectedAlbaranes)
           ? compareResult.expectedAlbaranes
           : [];
@@ -500,6 +505,12 @@ async function comparePendingFacturasIfReady() {
         }
         continue;
       }
+
+      await ipcRenderer.invoke('set-invoice-comparison-status', {
+        driveFileId: item?.uploadedFileId || null,
+        status: compareResult?.ok ? 'matched' : 'mismatch',
+        result: compareResult
+      });
 
       updateQueueStep(queueId, 'Comparado');
       updateQueueStep(queueId, 'Email');
@@ -2062,7 +2073,7 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
 
             if (docType === 'factura') {
               try {
-                if (currentUploadOrder === 'facturas-first') {
+                if (currentUploadOrder === 'order-independent') {
                   pendingFacturaComparisons.set(item.queueId, {
                     item: {
                       queueId: item.queueId,
@@ -2309,8 +2320,11 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
           }
         }
 
-        if (docType !== 'factura' && currentUploadOrder === 'facturas-first') {
+        if (docType === 'factura') {
           await comparePendingFacturasIfReady();
+        } else {
+          await comparePendingFacturasIfReady();
+          await ipcRenderer.invoke('force-pending-comparison');
         }
       }
 

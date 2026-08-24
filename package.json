@@ -7,6 +7,7 @@
     "start:prod": "electron .",
     "start:local": "set BACKEND_URL=http://localhost:3000&& electron .",
     "test:albaran-numbers": "node --test test/albaranNumbers.test.js",
+    "test:document-order": "node --test test/documentOrder.test.js",
     "build": "electron-builder",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac",

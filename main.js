@@ -11,6 +11,9 @@ const {
   cleanAlbaranDisplayId,
   normalizeAlbaranNumberForMatch
 } = require('./lib/albaranNumbers');
+const {
+  getMissingExpectedAlbaranes: findMissingExpectedAlbaranes
+} = require('./lib/documentOrder');
 
 const WATCH_SUBFOLDERS = ['Albaranes', 'Facturas'];
 const WATCHED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.txt'];
@@ -1785,6 +1788,21 @@ async function sendEmailNotification(subject, text, html = '') {
   });
 }
 
+async function persistInvoiceComparisonStatus({ invoiceId = null, driveFileId = null, status, result = {} } = {}) {
+  const sessionId = store.get('sessionId');
+  if (!sessionId) throw new Error('Sesión requerida para actualizar el estado de la factura');
+  if (!invoiceId && !driveFileId) return null;
+
+  const response = await postWithRetry(`${BACKEND_URL}/documents/invoices/comparison-status`, {
+    sessionId,
+    invoiceId,
+    driveFileId,
+    status,
+    result
+  });
+  return response?.data?.invoice || null;
+}
+
 async function uploadLocalFileToDrive(sessionId, filePath, targetFolderId) {
   const formData = new FormData();
   formData.append('sessionId', sessionId);
@@ -2789,9 +2807,12 @@ ipcMain.handle('scan-no-procesado', async () => {
 });
 
 ipcMain.handle('force-pending-comparison', async () => {
-  // Solicitud cliente: comparación forzada manual desactivada.
-  // const result = await forcePendingFacturasComparison('manual');
-  return { success: true, disabled: true, totalFacturas: 0, compared: 0, failed: 0 };
+  const result = await forcePendingFacturasComparison('manual');
+  return { success: true, disabled: false, ...result };
+});
+
+ipcMain.handle('set-invoice-comparison-status', async (event, payload = {}) => {
+  return persistInvoiceComparisonStatus(payload);
 });
 
 ipcMain.handle('ensure-standard-folders', async () => {
@@ -3604,11 +3625,14 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
   }
   if (!parsed || !parsed.albaranNumbers.length) {
     return {
-      ok: true,
-      message: 'No se detectaron albaranes en la factura.',
+      ok: false,
+      pending: true,
+      needsReview: true,
+      message: 'No se detectaron referencias de albarán fiables en la factura.',
       issues: [],
       matchedAlbaranes: [],
       expectedAlbaranes: [],
+      missingAlbaranes: [],
       incongruentAlbaranes: [],
       incongruentAlbaranDocs: [],
       congruentAlbaranDocs: [],
@@ -3669,6 +3693,28 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
     ...informesNoProcesadoFiles.map(file => ({ ...file, sourceFolderId: informesNoProcesadoFolder.id })),
     ...informesNoComparadoFilesOnly.map(file => ({ ...file, sourceFolderId: informesNoComparadoFolder.id }))
   ];
+
+  const missingAlbaranes = findMissingExpectedAlbaranes(parsed.albaranNumbers, informesNoComparadoFiles);
+  if (missingAlbaranes.length) {
+    return {
+      ok: false,
+      pending: true,
+      needsReview: false,
+      message: `Factura pendiente: faltan ${missingAlbaranes.length} albarán(es).`,
+      issues: [],
+      matchedAlbaranes: parsed.albaranNumbers.filter((number) => !missingAlbaranes.includes(number)),
+      expectedAlbaranes: parsed.albaranNumbers,
+      missingAlbaranes,
+      incongruentAlbaranes: [],
+      incongruentAlbaranDocs: [],
+      congruentAlbaranDocs: [],
+      facturaTotal,
+      facturaTotalCalculadoPorSuma: facturaTotalFallbackInfo.used,
+      sumatoriaTotalesAlbaranes: null,
+      albaranTotalsComparison: [],
+      totalFallbackWarnings: [...new Set(totalFallbackWarnings)]
+    };
+  }
 
   for (const albaranNum of parsed.albaranNumbers) {
     let sourceFile = null;
@@ -3870,10 +3916,12 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
   if (!overallIssues.length) {
     return {
       ok: true,
+      pending: false,
       message: 'No se encontraron incongruencias.',
       issues: [],
       matchedAlbaranes,
       expectedAlbaranes: parsed.albaranNumbers,
+      missingAlbaranes: [],
       incongruentAlbaranes: [],
       incongruentAlbaranDocs: [],
       congruentAlbaranDocs,
@@ -3887,10 +3935,12 @@ async function compareFacturaWithAlbaranes({ facturaAnalysisText, rootFolderName
 
   return {
     ok: false,
+    pending: false,
     message: `Incongruencias encontradas en ${overallIssues.length} línea(s).`,
     issues: overallIssues,
     matchedAlbaranes,
     expectedAlbaranes: parsed.albaranNumbers,
+    missingAlbaranes: [],
     incongruentAlbaranes: [...new Set(incongruentAlbaranes)],
     incongruentAlbaranDocs,
     congruentAlbaranDocs,
@@ -4015,11 +4065,7 @@ async function loadFacturaAnalysisTextFromInformesNoComparado(fileMeta, informes
 }
 
 function getMissingExpectedAlbaranes(expectedAlbaranes = [], informesAlbaranesFiles = []) {
-  const expected = (Array.isArray(expectedAlbaranes) ? expectedAlbaranes : [])
-    .map(num => String(num || '').trim())
-    .filter(Boolean);
-
-  return expected.filter((num) => !resolveTotalAlbaranTxtFile(num, informesAlbaranesFiles));
+  return findMissingExpectedAlbaranes(expectedAlbaranes, informesAlbaranesFiles);
 }
 
 async function forcePendingFacturasComparison(trigger = 'manual') {
@@ -4092,6 +4138,11 @@ async function forcePendingFacturasComparison(trigger = 'manual') {
       const missingAlbaranes = getMissingExpectedAlbaranes(expectedAlbaranes, informesAlbaranesFiles);
 
       if (missingAlbaranes.length) {
+        await persistInvoiceComparisonStatus({
+          driveFileId: fileMeta?.id || null,
+          status: 'pending',
+          result: { expectedAlbaranes, missingAlbaranes, trigger }
+        });
         emitToRenderer('queue-event', {
           type: 'step',
           id: queueId,
@@ -4114,6 +4165,22 @@ async function forcePendingFacturasComparison(trigger = 'manual') {
         rootFolderName: 'Facturas',
         compareMode: 'totales'
       });
+      await persistInvoiceComparisonStatus({
+        driveFileId: fileMeta?.id || null,
+        status: compareResult?.needsReview ? 'review' : (compareResult?.ok ? 'matched' : 'mismatch'),
+        result: compareResult
+      });
+      if (compareResult?.needsReview) {
+        emitToRenderer('queue-event', {
+          type: 'step',
+          id: queueId,
+          step: 'Esperando revisión',
+          fileName
+        });
+        waiting += 1;
+        waitingFileNames.push(fileName);
+        continue;
+      }
       emitToRenderer('queue-event', {
         type: 'step',
         id: queueId,

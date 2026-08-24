@@ -11,6 +11,7 @@ Aplicación de escritorio Electron para gestionar facturas y albaranes con Googl
 - Polling de jobs y cancelación de elementos en cola.
 - Creación de archivos `.txt` de resumen/totales en Drive.
 - Comparación de facturas contra albaranes por totales.
+- Reevaluación de facturas pendientes independientemente del orden de subida.
 - Envío de emails de resultado mediante Gmail autenticado.
 - Actualización automática con `electron-updater` y releases de GitHub.
 
@@ -147,7 +148,10 @@ Test unitario seguro disponible:
 
 ```bash
 npm run test:albaran-numbers
+npm run test:document-order
 ```
+
+Las zonas de subida de facturas y albaranes permanecen separadas. Una factura se intenta comparar al terminar su análisis; si faltan albaranes queda en `Facturas/No comparado`. Después de cada lote nuevo de albaranes se revisan también las facturas pendientes persistentes, incluidas las creadas en sesiones anteriores.
 
 ## Seguridad conocida
 
