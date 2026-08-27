@@ -62,7 +62,6 @@ const backendAlertTitle = document.getElementById('backend-alert-title');
 const backendAlertMessage = document.getElementById('backend-alert-message');
 const backendAlertHelp = document.getElementById('backend-alert-help');
 const backendAlertClose = document.getElementById('backend-alert-close');
-const forceCompareBtn = document.getElementById('force-compare-btn');
 const appVersionEl = document.getElementById('app-version');
 const updaterMessageEl = document.getElementById('updater-message');
 const updaterProgressEl = document.getElementById('updater-progress');
@@ -81,12 +80,6 @@ const DEFAULT_QUEUE_STEPS = ['En cola', 'Subiendo', 'Analizando', 'Comparando', 
 let currentUploadTargetFolder = null;
 let uploadFlowTail = Promise.resolve();
 const pendingFacturaComparisons = new Map();
-
-if (forceCompareBtn) {
-  // Solicitud cliente: desactivar comparación manual forzada.
-  forceCompareBtn.disabled = true;
-  forceCompareBtn.title = 'Desactivado por configuración';
-}
 
 function renderUpdaterStatus(payload = {}) {
   currentUpdaterStatus = {
@@ -3508,10 +3501,3 @@ if (queueSelectAllBtn) {
 if (queueCancelSelectedBtn) {
   queueCancelSelectedBtn.addEventListener('click', requestCancelSelectedQueueItems);
 }
-
-// Solicitud cliente: mantener botón visible pero desactivar totalmente la comparación forzada manual.
-// if (forceCompareBtn) {
-//   forceCompareBtn.addEventListener('click', async () => {
-//     ...
-//   });
-// }

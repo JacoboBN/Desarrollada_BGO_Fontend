@@ -91,11 +91,6 @@ const ANALYZE_ENDPOINTS = {
   auto: '/analyze/document/auto/file'
 };
 
-const LEGACY_ANALYZE_TEXT_ENDPOINTS = {
-  albaran: '/analyze/document/albaran',
-  factura: '/analyze/document/factura'
-};
-
 const MAIN_LOG_PREFIX = '[Frontend-Main]';
 
 function serializeError(error) {
@@ -1335,12 +1330,6 @@ function buildTxtFilesFromAnalysis(analysisText, sourceFileName = null) {
 function getAnalyzeEndpoint(docType) {
   const key = normalizeDocumentType(docType);
   const endpoint = ANALYZE_ENDPOINTS[key] || ANALYZE_ENDPOINTS.albaran;
-  return `${BACKEND_URL}${endpoint}`;
-}
-
-function getLegacyAnalyzeTextEndpoint(docType) {
-  const key = normalizeDocumentType(docType);
-  const endpoint = LEGACY_ANALYZE_TEXT_ENDPOINTS[key] || LEGACY_ANALYZE_TEXT_ENDPOINTS.albaran;
   return `${BACKEND_URL}${endpoint}`;
 }
 
@@ -2837,13 +2826,6 @@ ipcMain.handle('ensure-standard-folders', async () => {
   return ensureStandardFolders();
 });
 
-// Generar link para usuarios
-ipcMain.handle('get-user-link', () => {
-  // En producción, esta sería la URL de descarga del instalador con parámetro
-  // Por ahora retornamos instrucción
-  return 'https://tu-sitio.com/DriveShare-Setup.exe?mode=user';
-});
-
 // Función para encontrar o crear la carpeta "Albaranes/No procesado"
 async function getOrCreateAlbaranesNoProcesadoFolder(sessionId) {
   try {
@@ -2878,16 +2860,6 @@ async function getOrCreateAlbaranesNoProcesadoFolder(sessionId) {
   }
 }
 
-// Analyze document with local OCR and AI analysis
-ipcMain.handle('analyze-document', async (event, filePath, mimeType, originalName, docType = 'albaran') => {
-  try {
-    return await analyzeFileWithBackendIA(filePath, mimeType, originalName, docType, null);
-  } catch (error) {
-    console.error('Error analyzing document:', error);
-    throw new Error(error.response?.data?.error || 'Error al analizar el documento');
-  }
-});
-
 // Señal de cancelación desde el renderer: NO usa ipcMain.handle para no bloquear el renderer
 ipcMain.on('cancel-queue-item', async (event, queueId) => {
   if (!queueId) return;
@@ -2913,8 +2885,7 @@ ipcMain.on('cancel-queue-item', async (event, queueId) => {
   }
 });
 
-// Alias de compatibilidad: algunos flujos llaman a 'analyze-file'
-// Mantiene compatibilidad incluso si el backend aún no expone /analyze/document/*/file.
+// Punto de entrada IPC del flujo actual de análisis de archivos.
 ipcMain.handle('analyze-file', async (event, filePath, mimeType = '', originalName = '', docType = 'albaran', postProcess = null) => {
   try {
     return await analyzeFileWithBackendIA(filePath, mimeType, originalName, docType, postProcess);
@@ -2939,25 +2910,6 @@ ipcMain.handle('ocr-document', async (event, filePath, mimeType, originalName) =
   } catch (error) {
     console.error('Error en OCR:', error);
     throw new Error(error.message || 'Error en OCR');
-  }
-});
-
-ipcMain.handle('analyze-text', async (event, text, quality = 0.5, docType = 'albaran') => {
-  const sessionId = store.get('sessionId');
-  if (!sessionId) {
-    throw new Error('Sesión requerida para analizar texto');
-  }
-
-  try {
-    const response = await postWithRetry(getLegacyAnalyzeTextEndpoint(docType), {
-      text,
-      quality,
-      sessionId
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error analizando texto:', error);
-    throw new Error(error.response?.data?.error || 'Error al analizar texto');
   }
 });
 
