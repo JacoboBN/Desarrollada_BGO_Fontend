@@ -67,13 +67,11 @@ const updaterMessageEl = document.getElementById('updater-message');
 const updaterProgressEl = document.getElementById('updater-progress');
 const updaterCheckBtn = document.getElementById('updater-check-btn');
 const updaterInstallBtn = document.getElementById('updater-install-btn');
-const updaterReleaseBtn = document.getElementById('updater-release-btn');
 
 let currentUpdaterStatus = {
   status: 'idle',
   message: 'Comprobación de actualizaciones pendiente.',
-  progress: null,
-  releaseUrl: 'https://github.com/JacoboBN/frontend_factura_albaran/releases/latest'
+  progress: null
 };
 
 const DEFAULT_QUEUE_STEPS = ['En cola', 'Subiendo', 'Analizando', 'Comparando', 'Finalizado'];
@@ -142,13 +140,6 @@ if (updaterInstallBtn) {
       showStatus(`No se pudo iniciar la instalación: ${error?.message || error}`, 'error');
       updaterInstallBtn.disabled = false;
     }
-  });
-}
-
-if (updaterReleaseBtn) {
-  updaterReleaseBtn.addEventListener('click', async () => {
-    const url = currentUpdaterStatus?.releaseUrl || 'https://github.com/JacoboBN/frontend_factura_albaran/releases/latest';
-    await ipcRenderer.invoke('open-external', url);
   });
 }
 

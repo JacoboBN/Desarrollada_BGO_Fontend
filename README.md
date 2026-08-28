@@ -52,6 +52,7 @@ Variables usadas:
 | `BACKEND_URL` | URL base del backend. Si falta, usa `https://backend-factura-albaran.onrender.com`. |
 | `ENABLE_REFRESH_TOKENS` | Fuerza uso de refresh tokens propios. Si falta, se activa en producción/app empaquetada. |
 | `RESET_SESSION_ON_START` | Si vale `true`, borra sesiones guardadas al iniciar. |
+| `ENABLE_STARTUP_NO_PROCESADO_SCAN` | Si vale `true`, escanea automáticamente las carpetas `No procesado` al iniciar con una sesión válida o después de un login principal. Por defecto está desactivado. |
 | `DRIVE_UPLOAD_TIMEOUT_MS` | Timeout de uploads a Drive. Por defecto `180000`. |
 | `DRIVE_UPLOAD_CONCURRENCY` | Concurrencia de uploads a Drive. Por defecto `3`. |
 
@@ -131,16 +132,18 @@ El flujo de negocio crea/usa carpetas como:
 
 El frontend intenta crear carpetas necesarias cuando faltan, según el flujo de subida y comparación.
 
-## Flujos deshabilitados actualmente
+## Funcionalidades futuras o reactivables
 
-En el código quedan funciones históricas o preparadas pero desactivadas por comentario:
+Estas funcionalidades se conservan, pero no forman parte del flujo activo por defecto. Antes de activarlas, revisar sus permisos, el contrato con el backend y realizar pruebas integradas con datos de prueba.
 
-- Monitor automático de Gmail para facturas.
-- Escaneo automático de carpetas `No procesado` al iniciar.
-- Comparación forzada manual desde UI.
-- Acceso de UI a la sección Centros.
+- **Monitor automático de Gmail para facturas:** conserva `startBillingMonitor` y `runBillingMonitorCycle` en `main.js`, junto con los endpoints `/gmail/*` del backend. Permanece desactivado y requiere pruebas con una cuenta Gmail autorizada antes de reactivarlo.
+- **Escaneo automático de Drive `No procesado`:** se controla con `ENABLE_STARTUP_NO_PROCESADO_SCAN=true`. Revisa las carpetas de `No procesado`, procesa documentos y relanza comparaciones pendientes; por defecto permanece desactivado.
+- **OCR local de Electron:** conserva el handler `ocr-document`, `performLocalOCR`, `getBinaryPaths` y el recurso `ocr/ocr.exe` configurado para el empaquetado Windows.
+- **Comparación compleja por líneas:** la lógica permanece en `compareFacturaWithAlbaranes` y sus helpers. El flujo activo compara por totales; reactivarla requiere incorporar una selección de modo y revisar los emails de comparación.
+- **Centros:** la tarjeta permanece visible pero deshabilitada hasta que se defina e implemente su flujo de negocio.
+- **Comparación forzada manual desde UI:** la comparación programática de facturas pendientes se conserva, pero no hay botón manual en la interfaz.
 
-No documentar esas funciones como activas sin reactivarlas y probarlas.
+No documentar estas funciones como activas sin reactivarlas y probarlas.
 
 ## Tests
 

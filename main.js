@@ -41,13 +41,13 @@ const USE_REFRESH_TOKENS = useRefreshTokensFromEnv !== null
   ? useRefreshTokensFromEnv
   : (process.env.NODE_ENV === 'production' || app.isPackaged);
 const RESET_SESSION_ON_START = readBooleanEnv('RESET_SESSION_ON_START') === true;
+const ENABLE_STARTUP_NO_PROCESADO_SCAN = readBooleanEnv('ENABLE_STARTUP_NO_PROCESADO_SCAN') === true;
 
 // Configurar logging para actualizaciones
 log.transports.file.level = 'info';
 autoUpdater.logger = log;
 autoUpdater.autoDownload = true;
 
-const UPDATE_RELEASES_URL = 'https://github.com/JacoboBN/frontend_factura_albaran/releases/latest';
 const updaterState = {
   status: 'idle',
   message: 'Comprobación de actualizaciones pendiente.',
@@ -55,7 +55,6 @@ const updaterState = {
   currentVersion: app.getVersion(),
   availableVersion: null,
   downloadedVersion: null,
-  releaseUrl: UPDATE_RELEASES_URL,
   updatedAt: new Date().toISOString()
 };
 
@@ -2034,6 +2033,12 @@ app.whenReady().then(() => {
   resetSessionOnAppStart();
   createWindow();
 
+  if (ENABLE_STARTUP_NO_PROCESADO_SCAN) {
+    scanNoProcesado('startup').catch((error) => {
+      mainLog('error', 'scanNoProcesado:startup-error', serializeError(error));
+    });
+  }
+
   updateUpdaterState({
     status: 'checking',
     message: 'Buscando actualizaciones...'
@@ -2063,7 +2068,6 @@ app.whenReady().then(() => {
       status: 'available',
       message: `Nueva versión disponible (${info?.version || 'desconocida'}). Descargando...`,
       availableVersion: info?.version || null,
-      releaseUrl: info?.releaseNotes ? UPDATE_RELEASES_URL : updaterState.releaseUrl,
       progress: 0
     });
   });
@@ -2106,7 +2110,7 @@ app.whenReady().then(() => {
     });
   });
 
-  // El escaneo de "No procesado" se lanzará desde el renderer tras iniciar sesión.
+  // El escaneo de "No procesado" solo se lanza cuando lo habilita su flag de entorno.
   mainLog('info', 'app.whenReady:done');
 });
 
@@ -2166,6 +2170,12 @@ ipcMain.handle('google-login', async (event, isUser = false, purpose = 'primary'
       }
       // Solicitud cliente: monitor de email desactivado.
       // startBillingMonitor();
+
+      if (ENABLE_STARTUP_NO_PROCESADO_SCAN) {
+        scanNoProcesado('login').catch((error) => {
+          mainLog('error', 'scanNoProcesado:login-error', serializeError(error));
+        });
+      }
     }
     return userData;
     
@@ -2634,9 +2644,12 @@ ipcMain.handle('start-billing-monitor', async () => {
 });
 
 ipcMain.handle('scan-no-procesado', async () => {
-  // Solicitud cliente: escaneo automático de carpetas desactivado.
-  // await scanNoProcesado('login');
-  return { success: true, disabled: true };
+  if (!ENABLE_STARTUP_NO_PROCESADO_SCAN) {
+    return { success: true, disabled: true };
+  }
+
+  await scanNoProcesado('manual');
+  return { success: true, disabled: false };
 });
 
 ipcMain.handle('force-pending-comparison', async () => {
