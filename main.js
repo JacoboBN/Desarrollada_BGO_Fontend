@@ -1987,7 +1987,6 @@ const store = new Store({
   name: 'config'
 });
 let mainWindow;
-let bdWindow;
 let billingMonitorInterval = null;
 let billingMonitorRunning = false;
 let windowReadyResolve;
@@ -2026,29 +2025,6 @@ function createWindow() {
     if (windowReadyResolve) {
       windowReadyResolve();
     }
-  });
-}
-
-function openBdWindow() {
-  if (bdWindow && !bdWindow.isDestroyed()) {
-    bdWindow.focus();
-    return;
-  }
-
-  bdWindow = new BrowserWindow({
-    width: 1280,
-    height: 850,
-    parent: mainWindow,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
-    },
-    icon: path.join(__dirname, 'assets/icon.png')
-  });
-
-  bdWindow.loadFile('bd.html');
-  bdWindow.on('closed', () => {
-    bdWindow = null;
   });
 }
 
@@ -2232,22 +2208,6 @@ async function waitForAuth(sessionId, maxAttempts = 60, purpose = 'primary') {
   throw new Error('Timeout: No se completó la autenticación');
 }
 
-// Crear carpeta compartida
-ipcMain.handle('create-shared-folder', async () => {
-  const sessionId = store.get('sessionId');
-  
-  try {
-    const response = await postWithRetry(`${BACKEND_URL}/drive/create-folder`, {
-      sessionId
-    });
-    
-    return response.data;
-  } catch (error) {
-    console.error('Error creando carpeta:', error);
-    throw new Error(error.response?.data?.error || 'Error al crear carpeta');
-  }
-});
-
 // Compartir carpeta con usuarios (acepta folderId opcional)
 ipcMain.handle('share-folder', async (event, emails, folderId = null) => {
   const sessionId = store.get('sessionId');
@@ -2263,38 +2223,6 @@ ipcMain.handle('share-folder', async (event, emails, folderId = null) => {
   } catch (error) {
     console.error('Error compartiendo carpeta:', error);
     throw new Error(error.response?.data?.error || 'Error al compartir carpeta');
-  }
-});
-
-// Compartir Albaranes/No procesado
-ipcMain.handle('share-no-procesado-albaranes', async (event, emails = []) => {
-  const sessionId = store.get('sessionId');
-
-  try {
-    const response = await postWithRetry(`${BACKEND_URL}/drive/share-no-procesado-albaranes`, {
-      sessionId,
-      emails
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error('Error compartiendo No procesado:', error);
-    throw new Error(error.response?.data?.error || 'Error al compartir carpeta');
-  }
-});
-
-ipcMain.handle('get-no-procesado-shared-emails', async () => {
-  const sessionId = store.get('sessionId');
-
-  try {
-    const response = await postWithRetry(`${BACKEND_URL}/drive/no-procesado-shared-emails`, {
-      sessionId
-    });
-
-    return response.data;
-  } catch (error) {
-    console.error('Error obteniendo emails de No procesado:', error);
-    throw new Error(error.response?.data?.error || 'Error al obtener permisos de carpeta');
   }
 });
 
@@ -2430,11 +2358,6 @@ ipcMain.handle('open-external', async (event, url) => {
   }
 });
 
-ipcMain.handle('open-bd-window', async () => {
-  openBdWindow();
-  return { success: true };
-});
-
 ipcMain.handle('get-database-view', async (event, tableName = null, limit = 100) => {
   const sessionId = store.get('sessionId');
   if (!sessionId) {
@@ -2490,99 +2413,6 @@ ipcMain.handle('create-folder', async (event, name, parentId = null) => {
     console.error('Error creando carpeta:', error);
     throw new Error(error.response?.data?.error || 'Error al crear carpeta');
   }
-});
-
-// Obtener contenido de database.sql desde Drive (Mi unidad/Bases de datos)
-ipcMain.handle('get-drive-database-sql', async () => {
-  const sessionId = store.get('sessionId');
-  if (!sessionId) {
-    throw new Error('Sesión requerida para cargar la base de datos');
-  }
-
-  const rootContents = await postWithRetry(`${BACKEND_URL}/drive/list-contents`, {
-    sessionId,
-    folderId: 'root'
-  });
-  const rootFolders = (rootContents.data?.files || [])
-    .filter(item => item.mimeType === 'application/vnd.google-apps.folder');
-  const basesFolder = rootFolders.find(folder => (folder.name || '').toLowerCase() === 'bases de datos');
-  if (!basesFolder) {
-    throw new Error('No se encontró la carpeta "Bases de datos" en Mi unidad');
-  }
-
-  const basesContents = await postWithRetry(`${BACKEND_URL}/drive/list-contents`, {
-    sessionId,
-    folderId: basesFolder.id
-  });
-  const files = (basesContents.data?.files || [])
-    .filter(item => item.mimeType !== 'application/vnd.google-apps.folder');
-  const dbFile = files.find(item => (item.name || '').toLowerCase() === 'database.sql');
-  if (!dbFile) {
-    throw new Error('No se encontró el archivo database.sql en Bases de datos');
-  }
-
-  const sqlText = await downloadDriveFileToString(dbFile);
-  if (!sqlText) {
-    throw new Error('El archivo database.sql está vacío o no se pudo leer');
-  }
-
-  return { sqlText, fileName: dbFile.name, fileId: dbFile.id };
-});
-
-// Obtener Excel de proveedores desde Mi unidad/Base de datos (o Bases de datos)
-ipcMain.handle('get-drive-proveedores-excel', async () => {
-  const sessionId = store.get('sessionId');
-  if (!sessionId) {
-    throw new Error('Sesión requerida para cargar el Excel');
-  }
-
-  const normalize = (value = '') => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-
-  const rootContents = await postWithRetry(`${BACKEND_URL}/drive/list-contents`, {
-    sessionId,
-    folderId: 'root'
-  });
-
-  const rootFolders = (rootContents.data?.files || [])
-    .filter(item => item.mimeType === 'application/vnd.google-apps.folder');
-
-  const targetFolders = ['base de datos', 'bases de datos'];
-  const basesFolder = rootFolders.find(folder => targetFolders.includes(normalize(folder.name || '')));
-  if (!basesFolder) {
-    throw new Error('No se encontró la carpeta "Base de datos" en Mi unidad');
-  }
-
-  const basesContents = await postWithRetry(`${BACKEND_URL}/drive/list-contents`, {
-    sessionId,
-    folderId: basesFolder.id
-  });
-
-  const files = (basesContents.data?.files || [])
-    .filter(item => item.mimeType !== 'application/vnd.google-apps.folder');
-
-  const excelFile = files.find(item => normalize(item.name || '') === normalize('CORREGIDO_Maestro Proveedores.xlsx'));
-  if (!excelFile) {
-    throw new Error('No se encontró el archivo CORREGIDO_Maestro Proveedores.xlsx');
-  }
-
-  const downloadResponse = await postWithRetry(
-    `${BACKEND_URL}/drive/download`,
-    { sessionId, fileId: excelFile.id },
-    { timeout: 60000, axiosOptions: { responseType: 'arraybuffer' } }
-  );
-
-  const dataBase64 = Buffer.from(downloadResponse.data).toString('base64');
-  return {
-    fileName: excelFile.name,
-    fileId: excelFile.id,
-    mimeType: excelFile.mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    dataBase64
-  };
 });
 
 // Elegir carpeta para un archivo usando diálogos nativos (evita prompt())

@@ -20,7 +20,6 @@ Estas instrucciones aplican a `Frontend/` y complementan las instrucciones de `.
 
 - `main.js`: proceso principal Electron y lógica de integración.
 - `user.html`, `user.js`: interfaz y flujo de usuario.
-- `bd.html`: vista relacionada con datos/base de datos si está activa en el flujo.
 - `lib/`: utilidades compartidas.
 - `test/`: tests con el runner nativo de Node.
 - `assets/`: iconos y binarios para empaquetado.

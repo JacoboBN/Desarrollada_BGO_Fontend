@@ -138,7 +138,7 @@ En el código quedan funciones históricas o preparadas pero desactivadas por co
 - Monitor automático de Gmail para facturas.
 - Escaneo automático de carpetas `No procesado` al iniciar.
 - Comparación forzada manual desde UI.
-- Acceso de UI a algunas secciones como Centros/Bases de datos.
+- Acceso de UI a la sección Centros.
 
 No documentar esas funciones como activas sin reactivarlas y probarlas.
 
@@ -169,7 +169,6 @@ Esto facilita el desarrollo, pero no es la configuración recomendada para produ
 - `preload.js` con `contextBridge`
 - Validación estricta de IPC
 - Validación de URLs abiertas con `shell.openExternal`
-- Sanitización del HTML generado desde Excel/Drive
 
 ## Dependencias
 
@@ -181,7 +180,6 @@ La aplicación usa, entre otras:
 - axios
 - electron-store
 - electron-log
-- xlsx
 
 Además, `main.js` usa `require('form-data')`, pero `form-data` no está declarado como dependencia directa en `package.json` en este checkout. Conviene añadirlo explícitamente para no depender de una dependencia transitiva de `electron-builder`.
 
@@ -190,8 +188,6 @@ Revisar periódicamente:
 ```bash
 npm audit
 ```
-
-`xlsx` puede reportar vulnerabilidades sin fix directo en npm; evaluar mitigación o sustitución si se abren archivos no confiables.
 
 ## Problemas frecuentes
 
