@@ -1,6 +1,6 @@
 {
   "name": "driveshare-app",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "DriveShare - App de escritorio",
   "main": "main.js",
   "scripts": {
