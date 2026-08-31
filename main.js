@@ -64,7 +64,7 @@ function updateUpdaterState(patch = {}) {
 }
 
 // URL del backend: usa BACKEND_URL si se define; si no, mantiene producción por defecto.
-const DEFAULT_BACKEND_URL = 'https://backend-factura-albaran.onrender.com';
+const DEFAULT_BACKEND_URL = 'https://desarrollada-bgo-backend.onrender.com';
 const BACKEND_URL = process.env.BACKEND_URL || DEFAULT_BACKEND_URL;
 const DEFAULT_TIMEOUT_MS = 20000;
 const DRIVE_UPLOAD_TIMEOUT_MS = Number(process.env.DRIVE_UPLOAD_TIMEOUT_MS || 180000);

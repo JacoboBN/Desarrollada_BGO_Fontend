@@ -49,7 +49,7 @@ Variables usadas:
 
 | Variable | Uso |
 | --- | --- |
-| `BACKEND_URL` | URL base del backend. Si falta, usa `https://backend-factura-albaran.onrender.com`. |
+| `BACKEND_URL` | URL base del backend. Si falta, usa `https://desarrollada-bgo-backend.onrender.com`. |
 | `ENABLE_REFRESH_TOKENS` | Fuerza uso de refresh tokens propios. Si falta, se activa en producción/app empaquetada. |
 | `RESET_SESSION_ON_START` | Si vale `true`, borra sesiones guardadas al iniciar. |
 | `ENABLE_STARTUP_NO_PROCESADO_SCAN` | Si vale `true`, escanea automáticamente las carpetas `No procesado` al iniciar con una sesión válida o después de un login principal. Por defecto está desactivado. |
