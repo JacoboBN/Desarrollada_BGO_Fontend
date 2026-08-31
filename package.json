@@ -49,20 +49,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    },
-    "extraResources": [
-      {
-        "from": "assets/bin/win",
-        "to": "bin",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "ocr/ocr.exe",
-        "to": "ocr/ocr.exe"
-      }
-    ]
+    }
+    
   },
   "dependencies": {
     "axios": "^1.6.2",
