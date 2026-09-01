@@ -62,6 +62,11 @@ const backendAlertTitle = document.getElementById('backend-alert-title');
 const backendAlertMessage = document.getElementById('backend-alert-message');
 const backendAlertHelp = document.getElementById('backend-alert-help');
 const backendAlertClose = document.getElementById('backend-alert-close');
+const duplicateConfirmModal = document.getElementById('duplicate-confirm-modal');
+const duplicateConfirmMessage = document.getElementById('duplicate-confirm-message');
+const duplicateConfirmDetails = document.getElementById('duplicate-confirm-details');
+const duplicateConfirmNo = document.getElementById('duplicate-confirm-no');
+const duplicateConfirmYes = document.getElementById('duplicate-confirm-yes');
 const appVersionEl = document.getElementById('app-version');
 const updaterMessageEl = document.getElementById('updater-message');
 const updaterProgressEl = document.getElementById('updater-progress');
@@ -78,6 +83,69 @@ const DEFAULT_QUEUE_STEPS = ['En cola', 'Subiendo', 'Analizando', 'Comparando', 
 let currentUploadTargetFolder = null;
 let uploadFlowTail = Promise.resolve();
 const pendingFacturaComparisons = new Map();
+
+function formatDuplicateDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('es-ES');
+}
+
+function showDuplicateProcessedConfirm(fileName, duplicateInfo = {}) {
+  return new Promise((resolve) => {
+    if (!duplicateConfirmModal || !duplicateConfirmMessage || !duplicateConfirmNo || !duplicateConfirmYes) {
+      resolve(false);
+      return;
+    }
+
+    let settled = false;
+    const documentInfo = duplicateInfo.document || duplicateInfo || {};
+    const details = [];
+    if (documentInfo.originalName && documentInfo.originalName !== fileName) {
+      details.push(`Nombre anterior: ${documentInfo.originalName}`);
+    }
+    if (documentInfo.documentType) {
+      details.push(`Tipo detectado: ${documentInfo.documentType}`);
+    }
+    const processedAt = formatDuplicateDate(documentInfo.createdAt || documentInfo.updatedAt);
+    if (processedAt) details.push(`Procesado: ${processedAt}`);
+
+    duplicateConfirmMessage.textContent = `El archivo ${fileName} ya se ha procesado, ¿desea procesarlo otra vez?`;
+    if (duplicateConfirmDetails) {
+      duplicateConfirmDetails.textContent = details.join('\n');
+      duplicateConfirmDetails.classList.toggle('active', details.length > 0);
+    }
+
+    const onNo = () => finish(false);
+    const onYes = () => finish(true);
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(false);
+      }
+    };
+    const cleanup = () => {
+      duplicateConfirmModal.classList.remove('active');
+      duplicateConfirmModal.setAttribute('aria-hidden', 'true');
+      duplicateConfirmNo.removeEventListener('click', onNo);
+      duplicateConfirmYes.removeEventListener('click', onYes);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+    const finish = (shouldProcessAgain) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(shouldProcessAgain);
+    };
+
+    duplicateConfirmNo.addEventListener('click', onNo);
+    duplicateConfirmYes.addEventListener('click', onYes);
+    document.addEventListener('keydown', onKeyDown, true);
+    duplicateConfirmModal.classList.add('active');
+    duplicateConfirmModal.setAttribute('aria-hidden', 'false');
+    setTimeout(() => duplicateConfirmNo.focus(), 0);
+  });
+}
 
 function renderUpdaterStatus(payload = {}) {
   currentUpdaterStatus = {
@@ -1887,6 +1955,20 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
         }
 
         try {
+          const mimeType = guessMimeTypeFromPath(p);
+          updateQueueStep(queueId, 'Comprobando duplicado');
+          showStatus(`Comprobando si ${fileName} ya fue procesado...`, 'loading');
+          const fileHashMeta = await ipcRenderer.invoke('calculate-file-hash', p, fileName, mimeType);
+          const duplicateCheck = await ipcRenderer.invoke('check-duplicate-file', fileHashMeta);
+          if (duplicateCheck?.duplicate) {
+            const shouldProcessAgain = await showDuplicateProcessedConfirm(fileName, duplicateCheck);
+            if (!shouldProcessAgain) {
+              markQueueCancelled(queueId, 'Omitido por duplicado');
+              showStatus(`${fileName} ya estaba procesado y se ha omitido.`, 'success');
+              continue;
+            }
+          }
+
           updateQueueStep(queueId, 'Subiendo');
           showStatus(`Subiendo ${fileName}...`, 'loading');
           const uploadResult = await ipcRenderer.invoke('upload-file', p, target.id);
@@ -1898,7 +1980,9 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
             filePath: p,
             fileName,
             queueId,
-            mimeType: guessMimeTypeFromPath(p),
+            mimeType,
+            fileSha256: fileHashMeta.fileSha256,
+            fileSize: fileHashMeta.fileSize,
             uploadResult,
             uploadedFileId: uploadResult?.file?.id || uploadResult?.fileId || uploadResult?.id
           });
@@ -1940,6 +2024,8 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               sourceDriveFileId: item.uploadedFileId || null,
               sourceDriveFromFolderId: target?.id || null,
               sourceFileName: item.fileName,
+              fileSha256: item.fileSha256 || null,
+              fileSize: item.fileSize ?? null,
               facturaTxtFolderId: facturasInformesNoComparadoFolder?.id || null,
               facturaSourceDriveToFolderId: facturasNoComparadoFolder?.id || null,
               albaranTxtFolderId: informesNoComparadoFolder?.id || null,

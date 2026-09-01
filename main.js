@@ -6,6 +6,7 @@ const Store = require('electron-store');
 const axios = require('axios');
 const FormData = require('form-data');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const {
   cleanAlbaranDisplayId,
@@ -224,6 +225,34 @@ function normalizeDocumentType(value) {
   if (normalized === 'auto') return 'auto';
   if (normalized.includes('factura')) return 'factura';
   return 'albaran';
+}
+
+function calculateFileSha256(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', chunk => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+function getLocalFileSize(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() ? stat.size : null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildLocalFileHashMeta(filePath, originalName = '', mimeType = '') {
+  return {
+    fileSha256: await calculateFileSha256(filePath),
+    fileSize: getLocalFileSize(filePath),
+    originalName: originalName || path.basename(filePath),
+    mimeType: mimeType || ''
+  };
 }
 
 function sanitizeFileName(name) {
@@ -1364,6 +1393,12 @@ async function analyzeFileWithBackendIA(filePath, mimeType = '', originalName = 
     }
     if (pipeline?.sourceFileName) {
       formData.append('postProcessSourceFileName', String(pipeline.sourceFileName));
+    }
+    if (pipeline?.fileSha256) {
+      formData.append('fileSha256', String(pipeline.fileSha256));
+    }
+    if (pipeline?.fileSize !== undefined && pipeline?.fileSize !== null) {
+      formData.append('fileSize', String(pipeline.fileSize));
     }
     if (pipeline?.facturaTxtFolderId) {
       formData.append('facturaTxtFolderId', String(pipeline.facturaTxtFolderId));
@@ -2729,6 +2764,36 @@ ipcMain.on('cancel-queue-item', async (event, queueId) => {
 });
 
 // Punto de entrada IPC del flujo actual de análisis de archivos.
+ipcMain.handle('calculate-file-hash', async (event, filePath, originalName = '', mimeType = '') => {
+  if (!filePath) throw new Error('filePath requerido');
+  return buildLocalFileHashMeta(filePath, originalName, mimeType);
+});
+
+ipcMain.handle('check-duplicate-file', async (event, payload = {}) => {
+  const sessionId = store.get('sessionId');
+  if (!sessionId) {
+    throw new Error('Sesión requerida para comprobar duplicados');
+  }
+
+  const fileSha256 = String(payload.fileSha256 || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(fileSha256)) {
+    throw new Error('Hash SHA-256 inválido');
+  }
+
+  const response = await postWithRetry(`${BACKEND_URL}/documents/check-duplicate`, {
+    sessionId,
+    fileSha256,
+    fileSize: payload.fileSize ?? null,
+    originalName: payload.originalName || null,
+    mimeType: payload.mimeType || null
+  }, {
+    timeout: DEFAULT_TIMEOUT_MS,
+    retries: 1
+  });
+
+  return response.data;
+});
+
 ipcMain.handle('analyze-file', async (event, filePath, mimeType = '', originalName = '', docType = 'albaran', postProcess = null) => {
   try {
     return await analyzeFileWithBackendIA(filePath, mimeType, originalName, docType, postProcess);

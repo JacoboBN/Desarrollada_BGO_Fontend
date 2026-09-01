@@ -686,6 +686,93 @@
       color: #555;
     }
 
+    .duplicate-confirm-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(18, 18, 18, 0.78);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 12000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.18s ease;
+    }
+
+    .duplicate-confirm-modal.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .duplicate-confirm-card {
+      width: min(460px, calc(100vw - 36px));
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.38);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      text-align: center;
+    }
+
+    .duplicate-confirm-title {
+      font-size: 19px;
+      font-weight: 800;
+      color: #1f1f1f;
+    }
+
+    .duplicate-confirm-message {
+      font-size: 14px;
+      color: #3d3d3d;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .duplicate-confirm-details {
+      font-size: 12px;
+      color: #666;
+      background: #f4f4f4;
+      border-radius: 10px;
+      padding: 10px;
+      text-align: left;
+      white-space: pre-line;
+      word-break: break-word;
+      display: none;
+    }
+
+    .duplicate-confirm-details.active {
+      display: block;
+    }
+
+    .duplicate-confirm-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .duplicate-confirm-btn {
+      border: none;
+      border-radius: 9px;
+      padding: 10px 22px;
+      min-width: 96px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .duplicate-confirm-btn-no {
+      background: #007bff;
+      color: #ffffff;
+    }
+
+    .duplicate-confirm-btn-yes {
+      background: #e7e7e7;
+      color: #555;
+      border: 1px solid #d7d7d7;
+    }
+
     .upload-drop-modal {
       position: fixed;
       inset: 0;
@@ -1047,6 +1134,18 @@
         <div class="startup-overlay-title">Revisando carpetas...</div>
         <div class="startup-overlay-message" id="startup-overlay-message">
           Preparando la sincronización con Drive.
+        </div>
+      </div>
+    </div>
+
+    <div class="duplicate-confirm-modal" id="duplicate-confirm-modal" aria-hidden="true">
+      <div class="duplicate-confirm-card" role="dialog" aria-modal="true" aria-labelledby="duplicate-confirm-title">
+        <div class="duplicate-confirm-title" id="duplicate-confirm-title">Archivo ya procesado</div>
+        <div class="duplicate-confirm-message" id="duplicate-confirm-message"></div>
+        <div class="duplicate-confirm-details" id="duplicate-confirm-details"></div>
+        <div class="duplicate-confirm-actions">
+          <button class="duplicate-confirm-btn duplicate-confirm-btn-no" id="duplicate-confirm-no" type="button">No</button>
+          <button class="duplicate-confirm-btn duplicate-confirm-btn-yes" id="duplicate-confirm-yes" type="button">Sí</button>
         </div>
       </div>
     </div>
