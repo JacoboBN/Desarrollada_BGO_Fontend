@@ -9,9 +9,9 @@ Aplicación de escritorio Electron para gestionar facturas y albaranes con Googl
 - Subida única de documentos: se pueden mezclar facturas y albaranes y la IA identifica cada tipo automáticamente.
 - Envío de documentos al backend para análisis asíncrono con IA.
 - Polling de jobs y cancelación de elementos en cola.
-- Creación de archivos `.txt` de resumen/totales en Drive.
-- Comparación de facturas contra albaranes por totales.
-- Comparación automática de documentos relacionados, independientemente del orden de subida.
+- Persistencia de las extracciones de IA en PostgreSQL y comparación de facturas contra albaranes por totales desde la base de datos.
+- Comparación automática de documentos relacionados, independientemente del orden de subida; Drive solo representa su estado visual (`No procesado`, `No comparado`, `Documentos`).
+- Botón temporal de pruebas para vaciar los datos operativos de PostgreSQL con confirmación explícita, sin borrar tablas ni migraciones.
 - Envío de emails de resultado mediante Gmail autenticado.
 - Actualización automática con `electron-updater` y releases de GitHub.
 
@@ -154,7 +154,7 @@ npm run test:albaran-numbers
 npm run test:document-order
 ```
 
-Las zonas de subida de facturas y albaranes permanecen separadas. Una factura se intenta comparar al terminar su análisis; si faltan albaranes queda en `Facturas/No comparado`. Después de cada lote nuevo de albaranes se revisan también las facturas pendientes persistentes, incluidas las creadas en sesiones anteriores.
+Las zonas de subida de facturas y albaranes permanecen separadas. Una factura se intenta comparar al terminar su análisis; si faltan albaranes queda en `Facturas/No comparado`. Al analizar un albarán, PostgreSQL identifica exclusivamente las facturas que esperaban ese número y el frontend compara solo esas facturas; el reintento global de pendientes se conserva como fallback, no como paso automático de cada subida.
 
 ## Seguridad conocida
 

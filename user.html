@@ -1276,11 +1276,12 @@
             <div id="database-view" class="database-view" aria-live="polite">
               <div class="database-header">
                 <div class="database-title">
-                  <h2>Bases de datos <span class="database-readonly-badge">Solo lectura</span></h2>
-                  <div class="database-subtitle" id="database-subtitle">Consulta lo que se está guardando sin poder modificar datos.</div>
+                  <h2>Bases de datos <span class="database-readonly-badge">Lectura / pruebas</span></h2>
+                  <div class="database-subtitle" id="database-subtitle">Consulta lo que se está guardando. El borrado es temporal y solo para pruebas.</div>
                 </div>
                 <div class="actions">
                   <button class="btn btn-secondary small" id="database-refresh-btn" type="button">Recargar</button>
+                  <button class="btn btn-danger small" id="database-clear-test-btn" type="button">Vaciar BBDD de pruebas (TEMPORAL - luego se borrará)</button>
                 </div>
               </div>
 

@@ -27,6 +27,7 @@ const databaseTableContent = document.getElementById('database-table-content');
 const databaseTableMeta = document.getElementById('database-table-meta');
 const databaseSubtitle = document.getElementById('database-subtitle');
 const databaseRefreshBtn = document.getElementById('database-refresh-btn');
+const databaseClearTestBtn = document.getElementById('database-clear-test-btn');
 const databaseRowDetail = document.getElementById('database-row-detail');
 
 const queueList = document.getElementById('upload-queue-list');
@@ -82,7 +83,6 @@ let currentUpdaterStatus = {
 const DEFAULT_QUEUE_STEPS = ['En cola', 'Subiendo', 'Analizando', 'Comparando', 'Finalizado'];
 let currentUploadTargetFolder = null;
 let uploadFlowTail = Promise.resolve();
-const pendingFacturaComparisons = new Map();
 
 function formatDuplicateDate(value) {
   if (!value) return '';
@@ -399,6 +399,10 @@ async function sendMissingAlbaranesAlertForPendingFactura({
   });
 }
 
+/*
+ * Flujo histórico de comparación por Informes/TXT. La comparación vigente se
+ * realiza en PostgreSQL mediante comparePendingInvoicesByDatabaseAndMove.
+ * Se conserva como referencia temporal y no tiene llamadas activas.
 async function comparePendingFacturasIfReady() {
   const pendingEntries = Array.from(pendingFacturaComparisons.entries());
   if (!pendingEntries.length) return;
@@ -575,6 +579,7 @@ async function comparePendingFacturasIfReady() {
     }
   }
 }
+*/
 
 function enqueueUploadFlow(task, meta = {}) {
   const runTask = async () => {
@@ -1400,6 +1405,67 @@ function compactDatabaseValue(value, maxLength = 120) {
   return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1)}…`;
 }
 
+async function moveDatabaseComparisonDocuments(comparison = {}, folders = {}) {
+  const result = comparison.result || {};
+  if (result.pending || result.needsReview) return;
+
+  const invoiceDriveFileId = comparison.invoice?.driveFileId || comparison.driveFileId || null;
+  if (invoiceDriveFileId && folders.facturasDocumentosFolderId && folders.facturasNoComparadoFolderId) {
+    await ipcRenderer.invoke(
+      'move-file',
+      invoiceDriveFileId,
+      [folders.facturasDocumentosFolderId],
+      [folders.facturasNoComparadoFolderId]
+    );
+  }
+
+  const documents = [
+    ...(Array.isArray(result.congruentAlbaranDocs) ? result.congruentAlbaranDocs : []),
+    ...(Array.isArray(result.incongruentAlbaranDocs) ? result.incongruentAlbaranDocs : [])
+  ];
+  const movedFileIds = new Set();
+  for (const document of documents) {
+    const fileId = document?.fileId || null;
+    if (!fileId || movedFileIds.has(fileId)) continue;
+    movedFileIds.add(fileId);
+    if (folders.albaranesDocumentosFolderId && folders.albaranesNoComparadoFolderId) {
+      await ipcRenderer.invoke(
+        'move-file',
+        fileId,
+        [folders.albaranesDocumentosFolderId],
+        [folders.albaranesNoComparadoFolderId]
+      );
+    }
+  }
+}
+
+async function comparePendingInvoicesByDatabaseAndMove(folders = {}) {
+  const response = await ipcRenderer.invoke('compare-pending-invoices-database', { limit: 200 });
+  const comparedItems = Array.isArray(response?.comparedItems) ? response.comparedItems : [];
+  for (const comparison of comparedItems) {
+    await moveDatabaseComparisonDocuments(comparison, folders);
+  }
+  return response;
+}
+
+async function compareSelectedInvoicesByDatabaseAndMove(invoiceIds = [], folders = {}) {
+  const uniqueInvoiceIds = [...new Set(
+    (Array.isArray(invoiceIds) ? invoiceIds : [])
+      .map((invoiceId) => String(invoiceId || '').trim())
+      .filter(Boolean)
+  )];
+  if (!uniqueInvoiceIds.length) return { total: 0, comparedItems: [] };
+
+  const response = await ipcRenderer.invoke('compare-selected-invoices-database', {
+    invoiceIds: uniqueInvoiceIds
+  });
+  const comparedItems = Array.isArray(response?.comparedItems) ? response.comparedItems : [];
+  for (const comparison of comparedItems) {
+    await moveDatabaseComparisonDocuments(comparison, folders);
+  }
+  return response;
+}
+
 function setDatabasePanelVisible(isVisible) {
   if (databaseView) {
     databaseView.classList.toggle('active', Boolean(isVisible));
@@ -1546,6 +1612,22 @@ async function loadDatabaseView(tableName = null) {
 if (databaseRefreshBtn) {
   databaseRefreshBtn.addEventListener('click', () => {
     loadDatabaseView(databaseViewerState.selectedTable?.name || null);
+  });
+}
+
+if (databaseClearTestBtn) {
+  databaseClearTestBtn.addEventListener('click', async () => {
+    const confirmation = 'Desea borrar el conenido de las bases de datos?';
+    if (!confirm(confirmation)) return;
+
+    try {
+      databaseClearTestBtn.disabled = true;
+      showStatus('Vaciando base de datos. La aplicación se cerrará...', 'loading');
+      await ipcRenderer.invoke('clear-database-test-data', confirmation);
+    } catch (error) {
+      showStatus(`Error vaciando base de datos: ${error.message || error}`, 'error');
+      databaseClearTestBtn.disabled = false;
+    }
   });
 }
 
@@ -1918,18 +2000,15 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
       const targetLabel = 'Documentos pendientes de clasificar';
 
       let noComparadoFolder = null;
-      let informesNoComparadoFolder = null;
       let documentosFolder = null;
       let facturasNoComparadoFolder = null;
-      let facturasInformesNoComparadoFolder = null;
       let facturasDocumentosFolder = null;
       try {
         noComparadoFolder = await getOrCreateChildFolder(parentFolder.id, 'No comparado');
-        informesNoComparadoFolder = await getOrCreateInformesNoComparadoFolder('Albaranes');
+        documentosFolder = await getOrCreateChildFolder(parentFolder.id, 'Documentos');
         const facturasFolder = await findFolderByName('Facturas', true);
         if (!facturasFolder) throw new Error('No se encontró la carpeta Facturas');
         facturasNoComparadoFolder = await getOrCreateChildFolder(facturasFolder.id, 'No comparado');
-        facturasInformesNoComparadoFolder = await getOrCreateInformesNoComparadoFolder('Facturas');
         facturasDocumentosFolder = await getOrCreateChildFolder(facturasFolder.id, 'Documentos');
       } catch (folderError) {
         console.warn('No se pudo preparar la estructura de documentos:', folderError);
@@ -2026,9 +2105,7 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               sourceFileName: item.fileName,
               fileSha256: item.fileSha256 || null,
               fileSize: item.fileSize ?? null,
-              facturaTxtFolderId: facturasInformesNoComparadoFolder?.id || null,
               facturaSourceDriveToFolderId: facturasNoComparadoFolder?.id || null,
-              albaranTxtFolderId: informesNoComparadoFolder?.id || null,
               albaranSourceDriveToFolderId: noComparadoFolder?.id || null
             }
           })),
@@ -2064,7 +2141,7 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               throw new Error(analysisResult?.error || 'Error al analizar archivo');
             }
 
-            const detectedDocType = analysisResult?.raw?.documentType || analysisResult?.documentType || 'unknown';
+            const detectedDocType = analysisResult?.raw?.documentType || analysisResult?.documentType || docType;
             uiLog('log', 'uploadFilesToFolder:item-analysis-ok', {
               fileName: item.fileName,
               docType: detectedDocType
@@ -2080,21 +2157,34 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
 
             if (detectedDocType === 'factura') {
               try {
-                pendingFacturaComparisons.set(item.queueId, {
-                  item: {
-                    queueId: item.queueId,
-                    fileName: item.fileName,
-                    uploadedFileId: item.uploadedFileId
-                  },
-                  analysisText,
-                  parentFolderName: 'Facturas',
-                  documentosFolderId: facturasDocumentosFolder?.id || null,
-                  noComparadoFolderId: facturasNoComparadoFolder?.id || null
+                updateQueueStep(item.queueId, 'Comparando');
+                const comparison = await ipcRenderer.invoke('compare-invoice-database', {
+                  driveFileId: item.uploadedFileId || null
                 });
+                const result = comparison?.result || {};
+                if (result.pending || result.needsReview) {
+                  updateQueueStep(item.queueId, 'Finalizado');
+                  showStatus(`${item.fileName} se ha procesado y queda en No comparado hasta que BBDD tenga los albaranes relacionados.`, 'success');
+                  continue;
+                }
+
+                await moveDatabaseComparisonDocuments(comparison, {
+                  facturasDocumentosFolderId: facturasDocumentosFolder?.id || null,
+                  facturasNoComparadoFolderId: facturasNoComparadoFolder?.id || null,
+                  albaranesDocumentosFolderId: documentosFolder?.id || null,
+                  albaranesNoComparadoFolderId: noComparadoFolder?.id || null
+                });
+                updateQueueStep(item.queueId, 'Comparado');
                 updateQueueStep(item.queueId, 'Finalizado');
-                showStatus(`${item.fileName} se ha procesado. Se comparará automáticamente cuando estén los documentos relacionados.`, 'success');
+                showStatus(
+                  result.ok
+                    ? `${item.fileName} comparada correctamente por BBDD.`
+                    : `${item.fileName} comparada por BBDD con incongruencias.`,
+                  result.ok ? 'success' : 'error'
+                );
                 continue;
 
+                // Flujo TXT/Drive sustituido por la comparación anterior en BBDD.
                 updateQueueStep(item.queueId, 'Comparando');
                 const compareResult = await ipcRenderer.invoke('compare-factura-albaranes', {
                   facturaAnalysisText: analysisText,
@@ -2307,6 +2397,25 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               }
             }
 
+            if (detectedDocType === 'albaran') {
+              const affectedInvoiceIds = analysisResult?.raw?.persistence?.invoicesReadyForComparison
+                ?.map((invoice) => invoice?.id)
+                .filter(Boolean) || [];
+              if (affectedInvoiceIds.length) {
+                updateQueueStep(item.queueId, 'Comparando');
+                const selectedComparison = await compareSelectedInvoicesByDatabaseAndMove(affectedInvoiceIds, {
+                  facturasDocumentosFolderId: facturasDocumentosFolder?.id || null,
+                  facturasNoComparadoFolderId: facturasNoComparadoFolder?.id || null,
+                  albaranesDocumentosFolderId: documentosFolder?.id || null,
+                  albaranesNoComparadoFolderId: noComparadoFolder?.id || null
+                });
+                if (selectedComparison?.failed) {
+                  console.warn('Algunas facturas afectadas por el albarán no pudieron compararse por BBDD:', selectedComparison.failedItems);
+                }
+                updateQueueStep(item.queueId, 'Comparado');
+              }
+            }
+
             updateQueueStep(item.queueId, 'Finalizado');
             showStatus(`${item.fileName} se ha procesado correctamente.`, 'success');
 
@@ -2320,8 +2429,6 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
           }
         }
 
-        await comparePendingFacturasIfReady();
-        await ipcRenderer.invoke('force-pending-comparison');
       }
     }
   } catch (error) {
