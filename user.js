@@ -1370,6 +1370,321 @@ function buildIncongruentAlbaranesLinks(compareResult = {}) {
   return nums.map((num) => `- Albarán ${num} (nombre no disponible, total detectado: No disponible): link no disponible`);
 }
 
+function buildNotificationCongruentAlbaranesSummary(compareResult = {}) {
+  const docs = Array.isArray(compareResult?.congruentAlbaranDocs)
+    ? compareResult.congruentAlbaranDocs
+    : [];
+  if (!docs.length) return ['- No disponible'];
+  return docs.map((doc) => {
+    const num = doc?.albaranNum || 'N/A';
+    const fileName = doc?.fileName || 'Nombre no disponible';
+    const total = formatAmountEuro(doc?.totalDetected);
+    const url = doc?.url || buildDriveFileLink(doc?.fileId) || 'No disponible';
+    return `- Albarán ${num} (${fileName}, total detectado: ${total}): ${url}`;
+  });
+}
+
+function toNotificationHtmlList(lines = [], formatter = escapeHtml, fallback = 'No disponible') {
+  const normalized = (Array.isArray(lines) ? lines : []).filter(Boolean);
+  const items = normalized.length ? normalized : [fallback];
+  return items.map((line) => `<li>${formatter(String(line))}</li>`).join('');
+}
+
+function formatComparisonLineHtml(line = '') {
+  const urlPattern = /(https:\/\/drive\.google\.com\/[^\s<]+)/g;
+  return escapeHtml(String(line || '').replace(/^\-\s*/, ''))
+    .replace(urlPattern, '<a href="$1">Abrir en Drive</a>');
+}
+
+function getAnalysisSummary(analysisText = '') {
+  try {
+    const sections = extractAnalysisSections(analysisText);
+    const resumenLine = sections?.resumenRaw?.split(/\r?\n/).find((line) => line.trim());
+    return resumenLine ? JSON.parse(resumenLine) : {};
+  } catch {
+    return {};
+  }
+}
+
+function isMissingExtractionValue(value) {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  return !normalized || normalized === 'n/a' || normalized === 'na' || normalized === 'null' || normalized === '-';
+}
+
+function getExtractionPayload(analysisResult = {}, analysisText = '') {
+  const persistence = analysisResult?.raw?.persistence || analysisResult?.persistence || {};
+  if (persistence?.invoice?.raw_extraction) return persistence.invoice.raw_extraction;
+  if (Array.isArray(persistence?.deliveryNotes) && persistence.deliveryNotes[0]?.raw_extraction) {
+    const firstDeliveryNote = persistence.deliveryNotes[0];
+    return {
+      ...firstDeliveryNote.raw_extraction,
+      confidence: firstDeliveryNote.extraction_confidence ?? firstDeliveryNote.raw_extraction?.confidence,
+      extraction_warnings: firstDeliveryNote.extraction_warnings ?? firstDeliveryNote.raw_extraction?.extraction_warnings
+    };
+  }
+  return getAnalysisSummary(analysisText);
+}
+
+function evaluateDocumentExtractionQuality({ docType, analysisResult, analysisText } = {}) {
+  const extracted = getExtractionPayload(analysisResult, analysisText);
+  const normalizedType = String(docType || '').toLowerCase() === 'factura' ? 'factura' : 'albaran';
+  const confidenceRaw = extracted?.confidence;
+  const confidence = Number(confidenceRaw);
+  const warnings = Array.isArray(extracted?.extraction_warnings)
+    ? extracted.extraction_warnings.map((warning) => String(warning || '').trim()).filter(Boolean)
+    : extractExtractionWarningsFromAnalysis(analysisText);
+  const missingFields = [];
+  const blockingFields = [];
+  const check = (field, value, { blocking = false } = {}) => {
+    if (!isMissingExtractionValue(value)) return;
+    missingFields.push(field);
+    if (blocking) blockingFields.push(field);
+  };
+
+  check('proveedor_nombre', extracted?.proveedor_nombre ?? extracted?.proveedor?.nombre);
+  check('recibidor', extracted?.recibidor);
+
+  const albaranes = Array.isArray(extracted?.albaranes) ? extracted.albaranes : [];
+  if (!albaranes.length) {
+    missingFields.push('albaranes');
+    blockingFields.push('albaranes');
+  }
+
+  if (normalizedType === 'factura') {
+    check('num_factura', extracted?.num_factura, { blocking: true });
+    check('fecha', extracted?.fecha);
+    check('total_sin_iva', extracted?.total_sin_iva);
+    check('porcentaje_iva', extracted?.porcentaje_iva);
+    check('iva', extracted?.iva);
+    check('total', extracted?.total, { blocking: true });
+    albaranes.forEach((albaran, index) => {
+      check(`albaranes[${index}].num_albaran`, albaran?.num_albaran, { blocking: true });
+      check(`albaranes[${index}].fecha_albaran`, albaran?.fecha_albaran ?? albaran?.fecha);
+      check(`albaranes[${index}].total`, albaran?.total, { blocking: true });
+    });
+  } else {
+    albaranes.forEach((albaran, index) => {
+      check(`albaranes[${index}].num_albaran`, albaran?.num_albaran, { blocking: true });
+      check(`albaranes[${index}].fecha`, albaran?.fecha);
+      check(`albaranes[${index}].total`, albaran?.total, { blocking: true });
+    });
+  }
+
+  const lowConfidence = Number.isFinite(confidence) && confidence < 0.75;
+  const reasons = [];
+  if (lowConfidence) reasons.push(`Confidence baja: ${confidence.toFixed(2)} < 0.75.`);
+  if (blockingFields.length) reasons.push(`Faltan campos bloqueantes: ${blockingFields.join(', ')}.`);
+  if (missingFields.length >= 3) reasons.push(`Faltan ${missingFields.length} campos críticos.`);
+
+  return {
+    hasErrors: lowConfidence || blockingFields.length > 0 || missingFields.length >= 3,
+    confidence: Number.isFinite(confidence) ? confidence : null,
+    warnings,
+    missingFields: [...new Set(missingFields)],
+    blockingFields: [...new Set(blockingFields)],
+    reasons,
+    extracted
+  };
+}
+
+async function sendDedupedEmail(payload = {}) {
+  const recipientEmail = await getCurrentSessionEmail();
+  return ipcRenderer.invoke('send-deduped-email', { ...payload, to: recipientEmail });
+}
+
+async function sendExtractionQualityEmailIfNeeded({ item, detectedDocType, analysisResult, analysisText }) {
+  const quality = evaluateDocumentExtractionQuality({
+    docType: detectedDocType,
+    analysisResult,
+    analysisText
+  });
+  if (!quality.hasErrors) return { skipped: true, reason: 'quality_ok' };
+
+  const fileName = item?.fileName || 'Documento';
+  const driveFileId = item?.uploadedFileId || null;
+  const driveLink = buildDriveFileLink(driveFileId);
+  const warningLines = quality.warnings.length ? quality.warnings.map((warning) => `- ${warning}`) : ['- Ninguno'];
+  const missingLines = quality.missingFields.length ? quality.missingFields.map((field) => `- ${field}`) : ['- Ninguno'];
+  const reasonLines = quality.reasons.length ? quality.reasons.map((reason) => `- ${reason}`) : ['- Revisar la extracción.'];
+  const subject = `🚨 ${fileName} Con ERRORES, Revisar`;
+  const text = [
+    'DOCUMENTO CON ERRORES DE EXTRACCIÓN',
+    '',
+    `Archivo: ${fileName}`,
+    `Tipo detectado: ${detectedDocType}`,
+    `Confidence: ${quality.confidence === null ? 'No disponible' : quality.confidence.toFixed(2)}`,
+    `Link Drive: ${driveLink || 'No disponible'}`,
+    '',
+    '=== MOTIVOS ===',
+    ...reasonLines,
+    '',
+    '=== CAMPOS CRÍTICOS VACÍOS ===',
+    ...missingLines,
+    '',
+    '=== WARNINGS IA ===',
+    ...warningLines
+  ].join('\n');
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#222;line-height:1.5;max-width:760px;">
+      <h2 style="margin:0 0 12px;color:#a61b1b;">🚨 Documento con errores, revisar</h2>
+      <p><strong>Archivo:</strong> ${escapeHtml(fileName)}</p>
+      <p><strong>Tipo detectado:</strong> ${escapeHtml(detectedDocType)}</p>
+      <p><strong>Confidence:</strong> ${escapeHtml(quality.confidence === null ? 'No disponible' : quality.confidence.toFixed(2))}</p>
+      <p><strong>Documento original:</strong> ${driveLink ? `<a href="${escapeHtml(driveLink)}">Abrir en Drive</a>` : 'No disponible'}</p>
+      <h3>Motivos</h3><ul>${toNotificationHtmlList(reasonLines, escapeHtml)}</ul>
+      <h3>Campos críticos vacíos</h3><ul>${toNotificationHtmlList(missingLines, escapeHtml)}</ul>
+      <h3>Warnings IA</h3><ul>${toNotificationHtmlList(warningLines, escapeHtml)}</ul>
+    </div>`;
+
+  return sendDedupedEmail({
+    notificationType: 'extraction_quality_error',
+    documentType: detectedDocType,
+    driveFileId,
+    fileSha256: item?.fileSha256 || null,
+    sourceFileName: fileName,
+    subject,
+    text,
+    html,
+    metadata: {
+      dedupeKey: {
+        driveFileId,
+        fileSha256: item?.fileSha256 || null,
+        documentType: detectedDocType,
+        confidence: quality.confidence,
+        missingFields: quality.missingFields,
+        warnings: quality.warnings
+      },
+      quality: {
+        confidence: quality.confidence,
+        missingFields: quality.missingFields,
+        blockingFields: quality.blockingFields,
+        warnings: quality.warnings
+      }
+    }
+  });
+}
+
+function buildDatabaseComparisonEmailPayload(comparison = {}) {
+  const result = comparison?.result || {};
+  const invoice = comparison?.invoice || {};
+  const fileName = invoice.sourceFileName || comparison.sourceFileName || 'Factura';
+  const invoiceDriveFileId = invoice.driveFileId || comparison.driveFileId || null;
+  const facturaLink = invoice.driveUrl || buildDriveFileLink(invoiceDriveFileId);
+  const facturaTotal = parseComparableNumber(result.facturaTotal);
+  const albaranesTotal = parseComparableNumber(result.sumatoriaTotalesAlbaranes);
+  const difference = facturaTotal !== null && albaranesTotal !== null ? facturaTotal - albaranesTotal : null;
+  const totalsLines = buildAlbaranTotalsComparisonLines(result, fileName);
+  const issueLines = Array.isArray(result.issues) && result.issues.length
+    ? result.issues.map((issue) => `- ${addEuroSymbolToAmounts(issue)}`)
+    : ['- No se recibió detalle adicional.'];
+  const matchedLines = buildNotificationCongruentAlbaranesSummary(result);
+  const mismatchLines = buildIncongruentAlbaranesLinks(result);
+  const common = [
+    `Factura: ${fileName}`,
+    `Número factura: ${invoice.invoiceNumber || 'No disponible'}`,
+    `Total factura: ${formatAmountEuro(facturaTotal)}`,
+    `Total albaranes: ${formatAmountEuro(albaranesTotal)}`,
+    `Diferencia total: ${formatAmountEuro(difference)}`,
+    `Factura en Drive: ${facturaLink || 'No disponible'}`
+  ];
+
+  if (result.ok) {
+    return {
+      notificationType: 'comparison_matched',
+      fileName,
+      subject: `🟢 ${fileName} coincide`,
+      text: [
+        'VALIDACIÓN COMPLETADA: FACTURA COINCIDE',
+        '',
+        ...common,
+        '',
+        '=== ALBARANES CORRECTOS ===',
+        ...matchedLines,
+        '',
+        '=== TOTALES POR ALBARÁN ===',
+        ...totalsLines,
+        '',
+        'La factura y todos sus albaranes relacionados coinciden correctamente.'
+      ].join('\n'),
+      html: `
+        <div style="font-family:Arial,sans-serif;color:#222;line-height:1.5;max-width:760px;">
+          <h2 style="color:#17693a;">🟢 Factura coincide</h2>
+          <p><strong>Factura:</strong> ${escapeHtml(fileName)}</p>
+          <p><strong>Número:</strong> ${escapeHtml(invoice.invoiceNumber || 'No disponible')}</p>
+          <p><strong>Total factura:</strong> ${escapeHtml(formatAmountEuro(facturaTotal))}</p>
+          <p><strong>Total albaranes:</strong> ${escapeHtml(formatAmountEuro(albaranesTotal))}</p>
+          <p><strong>Diferencia:</strong> ${escapeHtml(formatAmountEuro(difference))}</p>
+          <p><strong>Factura original:</strong> ${facturaLink ? `<a href="${escapeHtml(facturaLink)}">Abrir en Drive</a>` : 'No disponible'}</p>
+          <h3>Albaranes correctos</h3><ul>${toNotificationHtmlList(matchedLines, formatComparisonLineHtml)}</ul>
+          <h3>Totales por albarán</h3><ul>${toNotificationHtmlList(totalsLines, formatAlbaranTotalComparisonLineHtml)}</ul>
+        </div>`
+    };
+  }
+
+  return {
+    notificationType: 'comparison_mismatch',
+    fileName,
+    subject: `🔴 ${fileName} no coincide`,
+    text: [
+      'ALERTA DE COMPARACIÓN: FACTURA NO COINCIDE',
+      '',
+      ...common,
+      '',
+      '=== COSAS QUE NO COINCIDEN ===',
+      ...issueLines,
+      '',
+      '=== TOTALES POR ALBARÁN ===',
+      ...totalsLines,
+      '',
+      '=== ALBARANES CON INCONGRUENCIAS ===',
+      ...mismatchLines
+    ].join('\n'),
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#222;line-height:1.5;max-width:760px;">
+        <h2 style="color:#a61b1b;">🔴 Factura no coincide</h2>
+        <p><strong>Factura:</strong> ${escapeHtml(fileName)}</p>
+        <p><strong>Número:</strong> ${escapeHtml(invoice.invoiceNumber || 'No disponible')}</p>
+        <p><strong>Total factura:</strong> ${escapeHtml(formatAmountEuro(facturaTotal))}</p>
+        <p><strong>Total albaranes:</strong> ${escapeHtml(formatAmountEuro(albaranesTotal))}</p>
+        <p><strong>Diferencia:</strong> ${escapeHtml(formatAmountEuro(difference))}</p>
+        <p><strong>Factura original:</strong> ${facturaLink ? `<a href="${escapeHtml(facturaLink)}">Abrir en Drive</a>` : 'No disponible'}</p>
+        <h3>Cosas que no coinciden</h3><ul>${toNotificationHtmlList(issueLines, escapeHtml)}</ul>
+        <h3>Totales por albarán</h3><ul>${toNotificationHtmlList(totalsLines, formatAlbaranTotalComparisonLineHtml)}</ul>
+        <h3>Albaranes con incongruencias</h3><ul>${toNotificationHtmlList(mismatchLines, formatComparisonLineHtml)}</ul>
+      </div>`
+  };
+}
+
+async function sendDatabaseComparisonEmailIfNeeded(comparison = {}) {
+  const result = comparison?.result || {};
+  if (result.pending || result.needsReview) return { skipped: true, reason: 'comparison_not_final' };
+
+  const payload = buildDatabaseComparisonEmailPayload(comparison);
+  const invoice = comparison?.invoice || {};
+  return sendDedupedEmail({
+    notificationType: payload.notificationType,
+    documentType: 'factura',
+    invoiceId: invoice.id || comparison.invoiceId || null,
+    driveFileId: invoice.driveFileId || comparison.driveFileId || null,
+    sourceFileName: payload.fileName,
+    subject: payload.subject,
+    text: payload.text,
+    html: payload.html,
+    metadata: {
+      dedupeKey: {
+        invoiceId: invoice.id || comparison.invoiceId || null,
+        status: result.ok ? 'matched' : 'mismatch',
+        facturaTotal: result.facturaTotal ?? null,
+        sumatoriaTotalesAlbaranes: result.sumatoriaTotalesAlbaranes ?? null,
+        issues: result.issues || [],
+        albaranTotalsComparison: result.albaranTotalsComparison || []
+      }
+    }
+  });
+}
+
 function escapeHtml(value = '') {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -1443,6 +1758,11 @@ async function comparePendingInvoicesByDatabaseAndMove(folders = {}) {
   const response = await ipcRenderer.invoke('compare-pending-invoices-database', { limit: 200 });
   const comparedItems = Array.isArray(response?.comparedItems) ? response.comparedItems : [];
   for (const comparison of comparedItems) {
+    try {
+      await sendDatabaseComparisonEmailIfNeeded(comparison);
+    } catch (emailError) {
+      console.warn('No se pudo enviar email de comparación pendiente:', emailError);
+    }
     await moveDatabaseComparisonDocuments(comparison, folders);
   }
   return response;
@@ -1461,6 +1781,11 @@ async function compareSelectedInvoicesByDatabaseAndMove(invoiceIds = [], folders
   });
   const comparedItems = Array.isArray(response?.comparedItems) ? response.comparedItems : [];
   for (const comparison of comparedItems) {
+    try {
+      await sendDatabaseComparisonEmailIfNeeded(comparison);
+    } catch (emailError) {
+      console.warn('No se pudo enviar email de comparación seleccionada:', emailError);
+    }
     await moveDatabaseComparisonDocuments(comparison, folders);
   }
   return response;
@@ -2155,6 +2480,21 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
               continue;
             }
 
+            try {
+              const qualityEmail = await sendExtractionQualityEmailIfNeeded({
+                item,
+                detectedDocType,
+                analysisResult,
+                analysisText
+              });
+              if (qualityEmail?.skipped === false) {
+                showStatus(`Aviso de errores de extracción enviado para ${item.fileName}.`, 'loading');
+              }
+            } catch (emailError) {
+              console.warn('No se pudo enviar email de errores de extracción:', emailError);
+              showStatus(`No se pudo enviar aviso de errores para ${item.fileName}.`, 'error');
+            }
+
             if (detectedDocType === 'factura') {
               try {
                 updateQueueStep(item.queueId, 'Comparando');
@@ -2166,6 +2506,16 @@ async function uploadFilesToFolder(parentFolderName, selectedFilePaths = null) {
                   updateQueueStep(item.queueId, 'Finalizado');
                   showStatus(`${item.fileName} se ha procesado y queda en No comparado hasta que BBDD tenga los albaranes relacionados.`, 'success');
                   continue;
+                }
+
+                try {
+                  const comparisonEmail = await sendDatabaseComparisonEmailIfNeeded(comparison);
+                  if (comparisonEmail?.skipped === false) {
+                    showStatus(`Email de comparación enviado para ${item.fileName}.`, 'loading');
+                  }
+                } catch (emailError) {
+                  console.warn('No se pudo enviar email de comparación de factura:', emailError);
+                  showStatus(`No se pudo enviar email de comparación para ${item.fileName}.`, 'error');
                 }
 
                 await moveDatabaseComparisonDocuments(comparison, {

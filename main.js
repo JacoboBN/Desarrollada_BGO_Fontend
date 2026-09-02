@@ -2914,6 +2914,29 @@ ipcMain.handle('send-email', async (event, payload) => {
   }
 });
 
+ipcMain.handle('send-deduped-email', async (event, payload = {}) => {
+  const sessionId = store.get('sessionId');
+  if (!sessionId) throw new Error('Sesión requerida para enviar email');
+
+  const { to, subject, notificationType } = payload;
+  if (!to) throw new Error('Destinatario requerido');
+  if (!subject) throw new Error('Asunto requerido');
+  if (!notificationType) throw new Error('Tipo de notificación requerido');
+
+  try {
+    const response = await postWithRetry(`${BACKEND_URL}/email/send-deduped`, {
+      sessionId,
+      ...payload
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error enviando email deduplicado:', error);
+    const details = error.response?.data?.details;
+    const baseMessage = error.response?.data?.error || error.message || 'Error al enviar email';
+    throw new Error(details ? `${baseMessage}: ${JSON.stringify(details)}` : baseMessage);
+  }
+});
+
 
 // Eliminar archivo de Drive por ID (limpia archivos cuyo proceso fue cancelado antes de finalizar)
 ipcMain.handle('delete-drive-file', async (event, fileId) => {

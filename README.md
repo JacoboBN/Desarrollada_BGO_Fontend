@@ -12,7 +12,7 @@ Aplicación de escritorio Electron para gestionar facturas y albaranes con Googl
 - Persistencia de las extracciones de IA en PostgreSQL y comparación de facturas contra albaranes por totales desde la base de datos.
 - Comparación automática de documentos relacionados, independientemente del orden de subida; Drive solo representa su estado visual (`No procesado`, `No comparado`, `Documentos`).
 - Botón temporal de pruebas para vaciar los datos operativos de PostgreSQL con confirmación explícita, sin borrar tablas ni migraciones.
-- Envío de emails de resultado mediante Gmail autenticado.
+- Envío de emails de resultado mediante Gmail autenticado. Solo se notifica la comparación cuando una factura tiene todos sus albaranes relacionados: verde si los totales coinciden y rojo si no. Los documentos con `confidence < 0.75`, campos bloqueantes vacíos o tres o más campos críticos vacíos generan un aviso de revisión con enlace a Drive.
 - Actualización automática con `electron-updater` y releases de GitHub.
 
 ## Requisitos
@@ -155,6 +155,8 @@ npm run test:document-order
 ```
 
 Las zonas de subida de facturas y albaranes permanecen separadas. Una factura se intenta comparar al terminar su análisis; si faltan albaranes queda en `Facturas/No comparado`. Al analizar un albarán, PostgreSQL identifica exclusivamente las facturas que esperaban ese número y el frontend compara solo esas facturas; el reintento global de pendientes se conserva como fallback, no como paso automático de cada subida.
+
+Las notificaciones automáticas se registran y deduplican en PostgreSQL por organización. Por tanto, relanzar una comparación final con el mismo resultado no vuelve a enviar el mismo email, incluso desde otro equipo. Un error de Gmail se muestra en la cola, pero no bloquea el movimiento de documentos; el registro queda disponible para reintento en una ejecución posterior.
 
 ## Seguridad conocida
 
