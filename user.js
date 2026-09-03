@@ -9,6 +9,10 @@ const {
   getMissingExpectedAlbaranes,
   areAllExpectedAlbaranesReady: areExpectedAlbaranesReady
 } = require('./lib/documentOrder');
+const {
+  buildQualityPayload,
+  evaluateDocumentExtractionQuality
+} = require('./lib/documentQuality');
 
 // Elementos del DOM
 const loginSection = document.getElementById('login-section');
@@ -1406,87 +1410,20 @@ function getAnalysisSummary(analysisText = '') {
   }
 }
 
-function isMissingExtractionValue(value) {
-  if (value === null || value === undefined) return true;
-  if (typeof value !== 'string') return false;
-  const normalized = value.trim().toLowerCase();
-  return !normalized || normalized === 'n/a' || normalized === 'na' || normalized === 'null' || normalized === '-';
-}
-
-function getExtractionPayload(analysisResult = {}, analysisText = '') {
+function getExtractionPayload(analysisResult = {}, analysisText = '', docType = null) {
   const persistence = analysisResult?.raw?.persistence || analysisResult?.persistence || {};
-  if (persistence?.invoice?.raw_extraction) return persistence.invoice.raw_extraction;
-  if (Array.isArray(persistence?.deliveryNotes) && persistence.deliveryNotes[0]?.raw_extraction) {
-    const firstDeliveryNote = persistence.deliveryNotes[0];
-    return {
-      ...firstDeliveryNote.raw_extraction,
-      confidence: firstDeliveryNote.extraction_confidence ?? firstDeliveryNote.raw_extraction?.confidence,
-      extraction_warnings: firstDeliveryNote.extraction_warnings ?? firstDeliveryNote.raw_extraction?.extraction_warnings
-    };
-  }
-  return getAnalysisSummary(analysisText);
+  return buildQualityPayload({
+    documentType: docType,
+    persistence,
+    fallback: getAnalysisSummary(analysisText)
+  });
 }
 
-function evaluateDocumentExtractionQuality({ docType, analysisResult, analysisText } = {}) {
-  const extracted = getExtractionPayload(analysisResult, analysisText);
-  const normalizedType = String(docType || '').toLowerCase() === 'factura' ? 'factura' : 'albaran';
-  const confidenceRaw = extracted?.confidence;
-  const confidence = Number(confidenceRaw);
-  const warnings = Array.isArray(extracted?.extraction_warnings)
-    ? extracted.extraction_warnings.map((warning) => String(warning || '').trim()).filter(Boolean)
-    : extractExtractionWarningsFromAnalysis(analysisText);
-  const missingFields = [];
-  const blockingFields = [];
-  const check = (field, value, { blocking = false } = {}) => {
-    if (!isMissingExtractionValue(value)) return;
-    missingFields.push(field);
-    if (blocking) blockingFields.push(field);
-  };
-
-  check('proveedor_nombre', extracted?.proveedor_nombre ?? extracted?.proveedor?.nombre);
-  check('recibidor', extracted?.recibidor);
-
-  const albaranes = Array.isArray(extracted?.albaranes) ? extracted.albaranes : [];
-  if (!albaranes.length) {
-    missingFields.push('albaranes');
-    blockingFields.push('albaranes');
-  }
-
-  if (normalizedType === 'factura') {
-    check('num_factura', extracted?.num_factura, { blocking: true });
-    check('fecha', extracted?.fecha);
-    check('total_sin_iva', extracted?.total_sin_iva);
-    check('porcentaje_iva', extracted?.porcentaje_iva);
-    check('iva', extracted?.iva);
-    check('total', extracted?.total, { blocking: true });
-    albaranes.forEach((albaran, index) => {
-      check(`albaranes[${index}].num_albaran`, albaran?.num_albaran, { blocking: true });
-      check(`albaranes[${index}].fecha_albaran`, albaran?.fecha_albaran ?? albaran?.fecha);
-      check(`albaranes[${index}].total`, albaran?.total, { blocking: true });
-    });
-  } else {
-    albaranes.forEach((albaran, index) => {
-      check(`albaranes[${index}].num_albaran`, albaran?.num_albaran, { blocking: true });
-      check(`albaranes[${index}].fecha`, albaran?.fecha);
-      check(`albaranes[${index}].total`, albaran?.total, { blocking: true });
-    });
-  }
-
-  const lowConfidence = Number.isFinite(confidence) && confidence < 0.75;
-  const reasons = [];
-  if (lowConfidence) reasons.push(`Confidence baja: ${confidence.toFixed(2)} < 0.75.`);
-  if (blockingFields.length) reasons.push(`Faltan campos bloqueantes: ${blockingFields.join(', ')}.`);
-  if (missingFields.length >= 3) reasons.push(`Faltan ${missingFields.length} campos críticos.`);
-
-  return {
-    hasErrors: lowConfidence || blockingFields.length > 0 || missingFields.length >= 3,
-    confidence: Number.isFinite(confidence) ? confidence : null,
-    warnings,
-    missingFields: [...new Set(missingFields)],
-    blockingFields: [...new Set(blockingFields)],
-    reasons,
-    extracted
-  };
+function evaluateCurrentDocumentExtractionQuality({ docType, analysisResult, analysisText } = {}) {
+  return evaluateDocumentExtractionQuality({
+    docType,
+    extracted: getExtractionPayload(analysisResult, analysisText, docType)
+  });
 }
 
 async function sendDedupedEmail(payload = {}) {
@@ -1495,18 +1432,18 @@ async function sendDedupedEmail(payload = {}) {
 }
 
 async function sendExtractionQualityEmailIfNeeded({ item, detectedDocType, analysisResult, analysisText }) {
-  const quality = evaluateDocumentExtractionQuality({
+  const quality = evaluateCurrentDocumentExtractionQuality({
     docType: detectedDocType,
     analysisResult,
     analysisText
   });
-  if (!quality.hasErrors) return { skipped: true, reason: 'quality_ok' };
+  if (!quality.shouldSendEmail) return { skipped: true, reason: 'quality_no_mortal_error', quality };
 
   const fileName = item?.fileName || 'Documento';
   const driveFileId = item?.uploadedFileId || null;
   const driveLink = buildDriveFileLink(driveFileId);
   const warningLines = quality.warnings.length ? quality.warnings.map((warning) => `- ${warning}`) : ['- Ninguno'];
-  const missingLines = quality.missingFields.length ? quality.missingFields.map((field) => `- ${field}`) : ['- Ninguno'];
+  const missingLines = quality.mortalFields.length ? quality.mortalFields.map((field) => `- ${field}`) : ['- Ninguno'];
   const reasonLines = quality.reasons.length ? quality.reasons.map((reason) => `- ${reason}`) : ['- Revisar la extracción.'];
   const subject = `🚨 ${fileName} Con ERRORES, Revisar`;
   const text = [
@@ -1520,7 +1457,7 @@ async function sendExtractionQualityEmailIfNeeded({ item, detectedDocType, analy
     '=== MOTIVOS ===',
     ...reasonLines,
     '',
-    '=== CAMPOS CRÍTICOS VACÍOS ===',
+    '=== CAMPOS MORTALES VACÍOS O NO FIABLES ===',
     ...missingLines,
     '',
     '=== WARNINGS IA ===',
@@ -1534,7 +1471,7 @@ async function sendExtractionQualityEmailIfNeeded({ item, detectedDocType, analy
       <p><strong>Confidence:</strong> ${escapeHtml(quality.confidence === null ? 'No disponible' : quality.confidence.toFixed(2))}</p>
       <p><strong>Documento original:</strong> ${driveLink ? `<a href="${escapeHtml(driveLink)}">Abrir en Drive</a>` : 'No disponible'}</p>
       <h3>Motivos</h3><ul>${toNotificationHtmlList(reasonLines, escapeHtml)}</ul>
-      <h3>Campos críticos vacíos</h3><ul>${toNotificationHtmlList(missingLines, escapeHtml)}</ul>
+      <h3>Campos mortales vacíos o no fiables</h3><ul>${toNotificationHtmlList(missingLines, escapeHtml)}</ul>
       <h3>Warnings IA</h3><ul>${toNotificationHtmlList(warningLines, escapeHtml)}</ul>
     </div>`;
 
@@ -1553,13 +1490,16 @@ async function sendExtractionQualityEmailIfNeeded({ item, detectedDocType, analy
         fileSha256: item?.fileSha256 || null,
         documentType: detectedDocType,
         confidence: quality.confidence,
-        missingFields: quality.missingFields,
+        mortalFields: quality.mortalFields,
         warnings: quality.warnings
       },
       quality: {
         confidence: quality.confidence,
         missingFields: quality.missingFields,
         blockingFields: quality.blockingFields,
+        mortalFields: quality.mortalFields,
+        criticalFields: quality.criticalFields,
+        fieldsBySeverity: quality.fieldsBySeverity,
         warnings: quality.warnings
       }
     }
